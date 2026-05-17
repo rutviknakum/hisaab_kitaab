@@ -1,0 +1,305 @@
+import 'package:path/path.dart';
+import 'package:sqflite/sqflite.dart';
+import 'db_constants.dart';
+
+class DatabaseHelper {
+  DatabaseHelper._();
+  static final DatabaseHelper instance = DatabaseHelper._();
+
+  static Database? _db;
+
+  Future<Database> get database async {
+    _db ??= await _initDb();
+    return _db!;
+  }
+
+  Future<Database> _initDb() async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, DbConstants.dbName);
+    return openDatabase(
+      path,
+      version: DbConstants.dbVersion,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      final tables = [
+        DbConstants.tAccounts,
+        DbConstants.tTransactions,
+        DbConstants.tPersons,
+        DbConstants.tLoans,
+        DbConstants.tPayments,
+      ];
+
+      for (final table in tables) {
+        try {
+          await db.execute(
+            'ALTER TABLE $table ADD COLUMN ${DbConstants.cUserId} TEXT',
+          );
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _onCreate(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE ${DbConstants.tAccounts} (
+        ${DbConstants.cId}          TEXT PRIMARY KEY,
+        ${DbConstants.cUserId}      TEXT NOT NULL,
+        ${DbConstants.cAccName}     TEXT NOT NULL,
+        ${DbConstants.cAccType}     TEXT NOT NULL,
+        ${DbConstants.cAccBalance}   REAL DEFAULT 0,
+        ${DbConstants.cAccColor}     TEXT,
+        ${DbConstants.cAccIcon}      TEXT,
+        ${DbConstants.cAccIsActive}  INTEGER DEFAULT 1,
+        ${DbConstants.cCreatedAt}    TEXT NOT NULL,
+        ${DbConstants.cUpdatedAt}    TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE ${DbConstants.tTransactions} (
+        ${DbConstants.cId}          TEXT PRIMARY KEY,
+        ${DbConstants.cUserId}      TEXT NOT NULL,
+        ${DbConstants.cTxnTitle}    TEXT NOT NULL,
+        ${DbConstants.cTxnAmount}    REAL NOT NULL,
+        ${DbConstants.cTxnType}     TEXT NOT NULL,
+        ${DbConstants.cTxnCategory}  TEXT NOT NULL,
+        ${DbConstants.cTxnAccId}    TEXT NOT NULL,
+        ${DbConstants.cTxnDate}     TEXT NOT NULL,
+        ${DbConstants.cTxnNote}     TEXT,
+        ${DbConstants.cCreatedAt}   TEXT NOT NULL,
+        FOREIGN KEY (${DbConstants.cTxnAccId})
+          REFERENCES ${DbConstants.tAccounts}(${DbConstants.cId})
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE ${DbConstants.tPersons} (
+        ${DbConstants.cId}          TEXT PRIMARY KEY,
+        ${DbConstants.cUserId}      TEXT NOT NULL,
+        ${DbConstants.cPerName}     TEXT NOT NULL,
+        ${DbConstants.cPerPhone}    TEXT,
+        ${DbConstants.cPerNote}     TEXT,
+        ${DbConstants.cCreatedAt}   TEXT NOT NULL,
+        ${DbConstants.cUpdatedAt}   TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE ${DbConstants.tLoans} (
+        ${DbConstants.cId}                TEXT PRIMARY KEY,
+        ${DbConstants.cUserId}            TEXT NOT NULL,
+        ${DbConstants.cLoanPersonId}      TEXT NOT NULL,
+        ${DbConstants.cLoanType}          TEXT NOT NULL,
+        ${DbConstants.cLoanPrincipal}     REAL NOT NULL,
+        ${DbConstants.cLoanInterestRate}  REAL DEFAULT 0,
+        ${DbConstants.cLoanInterestType}  TEXT NOT NULL,
+        ${DbConstants.cLoanPeriod}        TEXT NOT NULL,
+        ${DbConstants.cLoanStartDate}     TEXT NOT NULL,
+        ${DbConstants.cLoanEndDate}       TEXT,
+        ${DbConstants.cLoanPaymentStyle}  TEXT NOT NULL,
+        ${DbConstants.cLoanEmiAmount}     REAL DEFAULT 0,
+        ${DbConstants.cLoanEmiDay}        INTEGER DEFAULT 1,
+        ${DbConstants.cLoanTotalMonths}   INTEGER DEFAULT 0,
+        ${DbConstants.cLoanStatus}        TEXT DEFAULT 'active',
+        ${DbConstants.cLoanNote}          TEXT,
+        ${DbConstants.cCreatedAt}         TEXT NOT NULL,
+        ${DbConstants.cUpdatedAt}         TEXT NOT NULL,
+        FOREIGN KEY (${DbConstants.cLoanPersonId})
+          REFERENCES ${DbConstants.tPersons}(${DbConstants.cId})
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE ${DbConstants.tPayments} (
+        ${DbConstants.cId}          TEXT PRIMARY KEY,
+        ${DbConstants.cUserId}      TEXT NOT NULL,
+        ${DbConstants.cPayLoanId}   TEXT NOT NULL,
+        ${DbConstants.cPayAmount}   REAL NOT NULL,
+        ${DbConstants.cPayDate}     TEXT NOT NULL,
+        ${DbConstants.cPayTowards}  TEXT NOT NULL,
+        ${DbConstants.cPayNote}     TEXT,
+        ${DbConstants.cCreatedAt}   TEXT NOT NULL,
+        FOREIGN KEY (${DbConstants.cPayLoanId})
+          REFERENCES ${DbConstants.tLoans}(${DbConstants.cId})
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE ${DbConstants.tSettings} (
+        ${DbConstants.cSetKey}   TEXT PRIMARY KEY,
+        ${DbConstants.cSetValue} TEXT NOT NULL
+      )
+    ''');
+
+    await _insertDefaults(db);
+  }
+
+  Future<void> _insertDefaults(Database db) async {
+    final now = DateTime.now().toIso8601String();
+
+    final accounts = [
+      {
+        'id': 'acc_cash',
+        'user_id': 'system',
+        'name': 'રોકડ',
+        'type': 'cash',
+        'balance': 0.0,
+        'color': '#01696F',
+        'icon': '💵',
+        'is_active': 1,
+        'created_at': now,
+        'updated_at': now
+      },
+      {
+        'id': 'acc_bank',
+        'user_id': 'system',
+        'name': 'બૅન્ક',
+        'type': 'bank',
+        'balance': 0.0,
+        'color': '#006494',
+        'icon': '🏦',
+        'is_active': 1,
+        'created_at': now,
+        'updated_at': now
+      },
+      {
+        'id': 'acc_upi',
+        'user_id': 'system',
+        'name': 'UPI / વૉલેટ',
+        'type': 'upi',
+        'balance': 0.0,
+        'color': '#E07B39',
+        'icon': '📲',
+        'is_active': 1,
+        'created_at': now,
+        'updated_at': now
+      },
+    ];
+
+    for (final acc in accounts) {
+      await db.insert(DbConstants.tAccounts, acc);
+    }
+
+    final settings = [
+      {DbConstants.cSetKey: DbConstants.kLanguage, DbConstants.cSetValue: 'gu'},
+      {
+        DbConstants.cSetKey: DbConstants.kTheme,
+        DbConstants.cSetValue: 'system'
+      },
+      {
+        DbConstants.cSetKey: DbConstants.kPinEnabled,
+        DbConstants.cSetValue: 'false'
+      },
+      {DbConstants.cSetKey: DbConstants.kCurrency, DbConstants.cSetValue: '₹'},
+      {
+        DbConstants.cSetKey: DbConstants.kOnboarded,
+        DbConstants.cSetValue: 'false'
+      },
+    ];
+
+    for (final s in settings) {
+      await db.insert(DbConstants.tSettings, s);
+    }
+  }
+
+  Future<int> insert(String table, Map<String, dynamic> data) async {
+    final db = await database;
+    return db.insert(table, data, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<Map<String, dynamic>>> getAll(String table,
+      {String? where, List<dynamic>? whereArgs, String? orderBy}) async {
+    final db = await database;
+    return db.query(table,
+        where: where, whereArgs: whereArgs, orderBy: orderBy);
+  }
+
+  Future<Map<String, dynamic>?> getById(String table, String id) async {
+    final db = await database;
+    final result =
+        await db.query(table, where: '${DbConstants.cId} = ?', whereArgs: [id]);
+    return result.isNotEmpty ? result.first : null;
+  }
+
+  Future<int> update(String table, Map<String, dynamic> data, String id) async {
+    final db = await database;
+    return db
+        .update(table, data, where: '${DbConstants.cId} = ?', whereArgs: [id]);
+  }
+
+  Future<int> delete(String table, String id) async {
+    final db = await database;
+    return db.delete(table, where: '${DbConstants.cId} = ?', whereArgs: [id]);
+  }
+
+  Future<String?> getSetting(String key) async {
+    final db = await database;
+    final result = await db.query(DbConstants.tSettings,
+        where: '${DbConstants.cSetKey} = ?', whereArgs: [key]);
+    return result.isNotEmpty
+        ? result.first[DbConstants.cSetValue] as String
+        : null;
+  }
+
+  Future<void> setSetting(String key, String value) async {
+    final db = await database;
+    await db.insert(
+      DbConstants.tSettings,
+      {DbConstants.cSetKey: key, DbConstants.cSetValue: value},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<Map<String, dynamic>> exportAll() async {
+    final db = await database;
+    return {
+      'accounts': await db.query(DbConstants.tAccounts),
+      'transactions': await db.query(DbConstants.tTransactions),
+      'persons': await db.query(DbConstants.tPersons),
+      'loans': await db.query(DbConstants.tLoans),
+      'payments': await db.query(DbConstants.tPayments),
+      'settings': await db.query(DbConstants.tSettings),
+    };
+  }
+
+  Future<void> importAll(Map<String, dynamic> data) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final table in [
+        DbConstants.tPayments,
+        DbConstants.tLoans,
+        DbConstants.tTransactions,
+        DbConstants.tPersons,
+        DbConstants.tAccounts,
+        DbConstants.tSettings,
+      ]) {
+        await txn.delete(table);
+      }
+
+      for (final acc in data['accounts'] as List) {
+        await txn.insert(DbConstants.tAccounts, Map<String, dynamic>.from(acc));
+      }
+      for (final txnData in data['transactions'] as List) {
+        await txn.insert(
+            DbConstants.tTransactions, Map<String, dynamic>.from(txnData));
+      }
+      for (final p in data['persons'] as List) {
+        await txn.insert(DbConstants.tPersons, Map<String, dynamic>.from(p));
+      }
+      for (final loan in data['loans'] as List) {
+        await txn.insert(DbConstants.tLoans, Map<String, dynamic>.from(loan));
+      }
+      for (final pay in data['payments'] as List) {
+        await txn.insert(DbConstants.tPayments, Map<String, dynamic>.from(pay));
+      }
+      for (final s in data['settings'] as List) {
+        await txn.insert(DbConstants.tSettings, Map<String, dynamic>.from(s));
+      }
+    });
+  }
+}

@@ -1,0 +1,65 @@
+name: hisaab_kitaab
+description: હિસાબ કિતાબ - Personal Finance & Ledger App
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # State Management
+  provider: ^6.1.1
+
+  # Database
+  sqflite: ^2.3.2
+  path: ^1.9.0
+
+  # UI & Fonts
+  google_fonts: ^8.1.0
+  cupertino_icons: ^1.0.6
+  flutter_svg: ^2.0.9
+
+  # Charts
+  fl_chart: ^1.2.0
+
+  # Security
+  local_auth: ^3.0.1
+  crypto: ^3.0.3
+
+  # Export
+  pdf: ^3.10.8
+  printing: ^5.12.0
+  excel: ^4.0.2
+
+  # File & Storage
+  path_provider: ^2.1.2
+  permission_handler: ^12.0.1
+  share_plus: ^13.1.0
+  file_picker: ^12.0.0-beta.1
+
+  # Utils
+  intl: ^0.20.2
+  uuid: ^4.4.0
+  shared_preferences: ^2.2.3
+  url_launcher: ^6.3.2
+  flutter_slidable: ^4.0.3
+  supabase_flutter: ^2.12.4
+  google_sign_in: ^7.2.0
+  sign_in_with_apple: ^8.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/icons/

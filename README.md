@@ -162,7 +162,7 @@ flutter run
 Suggestions, issues અને pull requests welcome છે.
 
 ```bash
-git checkout -b feature/your-feature-name
+https://github.com/rutviknakum/hisaab_kitaab.git
 ```
 
 પછી changes commit કરો અને pull request બનાવો.

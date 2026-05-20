@@ -57,7 +57,7 @@ class TransactionProvider with ChangeNotifier {
   double monthlyBalance(int year, int month) =>
       monthlyIncome(year, month) - monthlyExpense(year, month);
 
-  Map<TransactionCategory, double> expenseByCategory({
+  Map<String, double> expenseByCategory({
     int? year,
     int? month,
   }) {
@@ -65,14 +65,14 @@ class TransactionProvider with ChangeNotifier {
         ? getByMonth(year, month)
         : List<TransactionModel>.from(_transactions);
 
-    final Map<TransactionCategory, double> map = {};
+    final Map<String, double> map = {};
     for (final t in list.where((t) => t.type == TransactionType.expense)) {
-      map[t.category] = (map[t.category] ?? 0) + t.amount;
+      map[t.categoryName] = (map[t.categoryName] ?? 0) + t.amount;
     }
     return map;
   }
 
-  Map<TransactionCategory, double> incomeByCategory({
+  Map<String, double> incomeByCategory({
     int? year,
     int? month,
   }) {
@@ -80,9 +80,9 @@ class TransactionProvider with ChangeNotifier {
         ? getByMonth(year, month)
         : List<TransactionModel>.from(_transactions);
 
-    final Map<TransactionCategory, double> map = {};
+    final Map<String, double> map = {};
     for (final t in list.where((t) => t.type == TransactionType.income)) {
-      map[t.category] = (map[t.category] ?? 0) + t.amount;
+      map[t.categoryName] = (map[t.categoryName] ?? 0) + t.amount;
     }
     return map;
   }

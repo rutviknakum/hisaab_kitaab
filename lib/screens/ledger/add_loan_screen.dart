@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -46,8 +47,8 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
       final l = widget.existing!;
       _principalCtrl.text = l.principal.toStringAsFixed(2);
       _rateCtrl.text = l.interestRate.toString();
-      _emiCtrl.text = l.emiAmount.toString();
-      _monthsCtrl.text = l.totalMonths.toString();
+      _emiCtrl.text = l.emiAmount > 0 ? l.emiAmount.toStringAsFixed(2) : '';
+      _monthsCtrl.text = l.totalMonths > 0 ? l.totalMonths.toString() : '';
       _noteCtrl.text = l.note ?? '';
       _loanType = l.type;
       _interestType = l.interestType;
@@ -69,19 +70,79 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
     super.dispose();
   }
 
+  double _calcReducingEmi({
+    required double principal,
+    required double rate,
+    required int months,
+    required InterestPeriod period,
+  }) {
+    if (principal <= 0 || months <= 0) return 0;
+
+    final monthlyRate = period == InterestPeriod.monthly
+        ? (rate / 100.0)
+        : ((rate / 12.0) / 100.0);
+
+    if (monthlyRate <= 0) return principal / months;
+
+    final emi = principal *
+        monthlyRate *
+        math.pow(1 + monthlyRate, months) /
+        (math.pow(1 + monthlyRate, months) - 1);
+
+    return emi.toDouble();
+  }
+
   void _calcEmi() {
-    final principal = double.tryParse(_principalCtrl.text) ?? 0;
-    final rate = double.tryParse(_rateCtrl.text) ?? 0;
-    final months = int.tryParse(_monthsCtrl.text) ?? 0;
+    final principal = double.tryParse(_principalCtrl.text.trim()) ?? 0;
+    final rate = double.tryParse(_rateCtrl.text.trim()) ?? 0;
+    final months = int.tryParse(_monthsCtrl.text.trim()) ?? 0;
 
-    if (principal <= 0 || months <= 0) return;
+    if (_payStyle != PaymentStyle.fixed) return;
 
-    double total = principal;
-    if (rate > 0 && _interestType == InterestType.flat) {
-      final years = months / 12;
-      total += (principal * rate * years) / 100;
+    if (principal <= 0 || months <= 0) {
+      setState(() => _emiCtrl.text = '');
+      return;
     }
-    final emi = total / months;
+
+    double emi = 0;
+    double total = principal;
+
+    if (_showInterest && rate > 0) {
+      switch (_interestType) {
+        case InterestType.flat:
+        case InterestType.simple:
+          if (_period == InterestPeriod.monthly) {
+            total += principal * (rate / 100.0) * months;
+          } else {
+            total += principal * (rate / 100.0) * (months / 12.0);
+          }
+          emi = total / months;
+          break;
+
+        case InterestType.compound:
+          if (_period == InterestPeriod.monthly) {
+            total =
+                (principal * math.pow(1 + (rate / 100.0), months)).toDouble();
+          } else {
+            total = (principal * math.pow(1 + ((rate / 100.0) / 12.0), months))
+                .toDouble();
+          }
+          emi = total / months;
+          break;
+
+        case InterestType.reducing:
+          emi = _calcReducingEmi(
+            principal: principal,
+            rate: rate,
+            months: months,
+            period: _period,
+          );
+          break;
+      }
+    } else {
+      emi = total / months;
+    }
+
     setState(() => _emiCtrl.text = emi.toStringAsFixed(2));
   }
 
@@ -99,43 +160,70 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
         child: child!,
       ),
     );
-    if (picked != null) setState(() => _startDate = picked);
+    if (picked != null) {
+      setState(() => _startDate = picked);
+    }
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+
     setState(() => _saving = true);
 
-    final loan = LoanModel(
-      id: widget.existing?.id,
-      personId: widget.personId,
-      type: _loanType,
-      principal: double.parse(_principalCtrl.text),
-      interestRate: double.tryParse(_rateCtrl.text) ?? 0,
-      interestType: _interestType,
-      period: _period,
-      startDate: _startDate,
-      paymentStyle: _payStyle,
-      emiAmount: double.tryParse(_emiCtrl.text) ?? 0,
-      emiDay: _emiDay,
-      totalMonths: int.tryParse(_monthsCtrl.text) ?? 0,
-      note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
-      userId: '',
-    );
+    try {
+      final interestRate =
+          _showInterest ? (double.tryParse(_rateCtrl.text.trim()) ?? 0) : 0.0;
 
-    final loanP = context.read<LoanProvider>();
-    if (_isEdit) {
-      await loanP.updateLoan(loan);
-    } else {
-      await loanP.addLoan(loan);
+      final totalMonths = _payStyle == PaymentStyle.fixed
+          ? (int.tryParse(_monthsCtrl.text.trim()) ?? 0)
+          : 0;
+
+      final emiAmount = _payStyle == PaymentStyle.fixed
+          ? (double.tryParse(_emiCtrl.text.trim()) ?? 0)
+          : 0.0;
+
+      final loan = LoanModel(
+        id: widget.existing?.id,
+        personId: widget.personId,
+        type: _loanType,
+        principal: double.parse(_principalCtrl.text.trim()),
+        interestRate: interestRate,
+        interestType: _interestType,
+        period: _period,
+        startDate: _startDate,
+        paymentStyle: _payStyle,
+        emiAmount: emiAmount,
+        emiDay: _emiDay,
+        totalMonths: totalMonths,
+        note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+        userId: '',
+      );
+
+      final loanP = context.read<LoanProvider>();
+      if (_isEdit) {
+        await loanP.updateLoan(loan);
+      } else {
+        await loanP.addLoan(loan);
+      }
+
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('લોન સેવ કરી શક્યા નથી: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
-
-    setState(() => _saving = false);
-    if (mounted) Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
+    final showFixedSection = _payStyle == PaymentStyle.fixed;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -154,9 +242,11 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(30),
         ),
-        icon: const Icon(Icons.add, size: 20),
+        icon: Icon(_isEdit ? Icons.save_rounded : Icons.add, size: 20),
         label: Text(
-          _isEdit ? 'લોન સુધારો' : 'લોન ઉમેરો',
+          _saving
+              ? 'સેવ થઈ રહ્યું છે...'
+              : (_isEdit ? 'લોન સુધારો' : 'લોન ઉમેરો'),
           style: const TextStyle(
             fontFamily: 'NotoSansGujarati',
             fontWeight: FontWeight.w700,
@@ -224,19 +314,17 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
               ],
-              onChanged: (_) {
-                if (_payStyle == PaymentStyle.fixed) {
-                  _calcEmi();
-                }
-              },
+              onChanged: (_) => _calcEmi(),
               decoration: _inputDec(
                 label: 'મૂળ રકમ (₹) *',
                 hint: '0.00',
                 icon: Icons.currency_rupee,
               ),
               validator: (v) {
-                if (v == null || v.isEmpty) return 'રકમ લખો';
-                if ((double.tryParse(v) ?? 0) <= 0) return 'સાચી રકમ લખો';
+                if (v == null || v.trim().isEmpty) return 'રકમ લખો';
+                if ((double.tryParse(v.trim()) ?? 0) <= 0) {
+                  return 'સાચી રકમ લખો';
+                }
                 return null;
               },
             ),
@@ -254,8 +342,11 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.calendar_today,
-                        color: AppColors.primary, size: 18),
+                    const Icon(
+                      Icons.calendar_today,
+                      color: AppColors.primary,
+                      size: 18,
+                    ),
                     const SizedBox(width: 12),
                     Text(
                       DateFormat('dd MMMM yyyy').format(_startDate),
@@ -275,43 +366,55 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
                 Switch(
                   value: _showInterest,
                   activeThumbColor: AppColors.primary,
-                  onChanged: (v) => setState(() => _showInterest = v),
+                  onChanged: (v) {
+                    setState(() {
+                      _showInterest = v;
+                      if (!v) {
+                        _rateCtrl.clear();
+                        _interestType = InterestType.simple;
+                      }
+                    });
+                    _calcEmi();
+                  },
                 ),
               ],
             ),
             if (_showInterest) ...[
               const SizedBox(height: 10),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: InterestType.values.map((t) {
                   final sel = _interestType == t;
-                  return Expanded(
-                    child: GestureDetector(
-                      onTap: () => setState(() => _interestType = t),
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 3),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: sel
-                              ? AppColors.primarySurface
-                              : Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHighest
-                                  .withOpacity(0.3),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: sel ? AppColors.primary : Colors.transparent,
-                          ),
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() => _interestType = t);
+                      _calcEmi();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: sel
+                            ? AppColors.primarySurface
+                            : Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest
+                                .withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: sel ? AppColors.primary : Colors.transparent,
                         ),
-                        child: Text(
-                          t.label,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontFamily: 'NotoSansGujarati',
-                            color: sel ? AppColors.primary : null,
-                            fontWeight:
-                                sel ? FontWeight.w700 : FontWeight.normal,
-                          ),
+                      ),
+                      child: Text(
+                        t.label,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'NotoSansGujarati',
+                          color: sel ? AppColors.primary : null,
+                          fontWeight: sel ? FontWeight.w700 : FontWeight.normal,
                         ),
                       ),
                     ),
@@ -327,12 +430,21 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
                       controller: _rateCtrl,
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                      ],
                       onChanged: (_) => _calcEmi(),
                       decoration: _inputDec(
                         label: 'દર %',
                         hint: '2',
                         icon: Icons.percent,
                       ),
+                      validator: (v) {
+                        if (!_showInterest) return null;
+                        final value = double.tryParse(v?.trim() ?? '') ?? 0;
+                        if (value <= 0) return 'દર લખો';
+                        return null;
+                      },
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -356,7 +468,10 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
                             ),
                           )
                           .toList(),
-                      onChanged: (v) => setState(() => _period = v!),
+                      onChanged: (v) {
+                        setState(() => _period = v!);
+                        _calcEmi();
+                      },
                     ),
                   ),
                 ],
@@ -371,7 +486,10 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
                 final label = s == PaymentStyle.fixed ? 'સ્થિર EMI' : 'લવચીક';
                 return Expanded(
                   child: GestureDetector(
-                    onTap: () => setState(() => _payStyle = s),
+                    onTap: () {
+                      setState(() => _payStyle = s);
+                      _calcEmi();
+                    },
                     child: Container(
                       margin: const EdgeInsets.symmetric(horizontal: 4),
                       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -403,7 +521,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
                 );
               }).toList(),
             ),
-            if (_payStyle == PaymentStyle.fixed) ...[
+            if (showFixedSection) ...[
               const SizedBox(height: 14),
               Row(
                 children: [
@@ -411,12 +529,25 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
                     child: TextFormField(
                       controller: _monthsCtrl,
                       keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
                       onChanged: (_) => _calcEmi(),
                       decoration: _inputDec(
                         label: 'કુલ મહિના *',
                         hint: '12',
                         icon: Icons.calendar_view_month,
                       ),
+                      validator: (v) {
+                        if (_payStyle != PaymentStyle.fixed) return null;
+                        if (v == null || v.trim().isEmpty) {
+                          return 'મહિના લખો';
+                        }
+                        if ((int.tryParse(v.trim()) ?? 0) <= 0) {
+                          return 'સાચા મહિના લખો';
+                        }
+                        return null;
+                      },
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -425,11 +556,21 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
                       controller: _emiCtrl,
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
+                      readOnly: true,
                       decoration: _inputDec(
-                        label: 'EMI રકમ (₹)',
+                        label: _interestType == InterestType.reducing
+                            ? 'EMI રકમ (Auto)'
+                            : 'EMI રકમ (₹)',
                         hint: 'Auto',
                         icon: Icons.payments_rounded,
                       ),
+                      validator: (v) {
+                        if (_payStyle != PaymentStyle.fixed) return null;
+                        if ((double.tryParse(v?.trim() ?? '') ?? 0) <= 0) {
+                          return 'EMI generate નથી થયું';
+                        }
+                        return null;
+                      },
                     ),
                   ),
                 ],
@@ -478,6 +619,18 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
                   ),
                 ],
               ),
+              if (_showInterest && _interestType == InterestType.reducing)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'ઘટતા બેલેન્સમાં દર હપ્તા પછી principal ઓછું થતા interest પણ ઓછું થાય છે.',
+                    style: TextStyle(
+                      fontFamily: 'NotoSansGujarati',
+                      fontSize: 11,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ),
             ],
             const SizedBox(height: 14),
             TextFormField(

@@ -1,9 +1,10 @@
+import 'dart:math' as math;
 import 'package:uuid/uuid.dart';
 import '../database/db_constants.dart';
 
 enum LoanType { gave, took }
 
-enum InterestType { simple, compound, flat }
+enum InterestType { simple, compound, flat, reducing }
 
 enum InterestPeriod { monthly, yearly }
 
@@ -40,6 +41,8 @@ extension InterestTypeInfo on InterestType {
         return 'ચક્રવૃદ્ધિ વ્યાજ';
       case InterestType.flat:
         return 'ફ્લૅટ રેટ (EMI)';
+      case InterestType.reducing:
+        return 'ઘટતા બેલેન્સ પર વ્યાજ';
     }
   }
 }
@@ -100,25 +103,152 @@ class LoanModel {
 
   double simpleInterest(DateTime asOf) {
     final days = asOf.difference(startDate).inDays;
-    final years = days / 365;
-    final rate =
-        period == InterestPeriod.yearly ? interestRate : interestRate * 12;
-    return (principal * rate * years) / 100;
+    if (days <= 0 || interestRate <= 0) return 0;
+
+    if (period == InterestPeriod.monthly) {
+      final months = days / 30.0;
+      return (principal * interestRate * months) / 100.0;
+    } else {
+      final years = days / 365.0;
+      return (principal * interestRate * years) / 100.0;
+    }
   }
 
   double compoundInterest(DateTime asOf) {
     final days = asOf.difference(startDate).inDays;
-    final years = days / 365;
-    final n = period == InterestPeriod.monthly ? 12.0 : 1.0;
-    final r = interestRate / 100;
-    final amount = principal * (1 + r / n) * (n * years);
-    return amount - principal < 0 ? 0 : amount - principal;
+    if (days <= 0 || interestRate <= 0) return 0;
+
+    if (period == InterestPeriod.monthly) {
+      final months = days / 30.0;
+      final r = interestRate / 100.0;
+      final amount = principal * math.pow(1 + r, months);
+      final interest = amount - principal;
+      return interest < 0 ? 0 : interest.toDouble();
+    } else {
+      final years = days / 365.0;
+      final r = interestRate / 100.0;
+      final amount = principal * math.pow(1 + r, years);
+      final interest = amount - principal;
+      return interest < 0 ? 0 : interest.toDouble();
+    }
   }
 
   double flatRateInterest() {
-    if (totalMonths == 0) return 0;
-    final years = totalMonths / 12;
-    return (principal * interestRate * years) / 100;
+    if (totalMonths <= 0 || interestRate <= 0) return 0;
+
+    if (period == InterestPeriod.monthly) {
+      return principal * (interestRate / 100.0) * totalMonths;
+    } else {
+      final years = totalMonths / 12.0;
+      return principal * (interestRate / 100.0) * years;
+    }
+  }
+
+  double get monthlyRate {
+    if (interestRate <= 0) return 0;
+    if (period == InterestPeriod.monthly) return interestRate / 100.0;
+    return (interestRate / 12.0) / 100.0;
+  }
+
+  double reducingEmiAmount() {
+    if (totalMonths <= 0 || principal <= 0) return 0;
+
+    final r = monthlyRate;
+    final n = totalMonths;
+
+    if (r <= 0) {
+      return principal / n;
+    }
+
+    final emi = principal * r * math.pow(1 + r, n) / (math.pow(1 + r, n) - 1);
+
+    return emi.toDouble();
+  }
+
+  List<Map<String, dynamic>> reducingSchedule() {
+    if (interestType != InterestType.reducing || totalMonths <= 0) return [];
+
+    final schedule = <Map<String, dynamic>>[];
+    final emi = emiAmount > 0 ? emiAmount : reducingEmiAmount();
+    final r = monthlyRate;
+
+    double balance = principal;
+
+    for (var i = 0; i < totalMonths; i++) {
+      final interest = r <= 0 ? 0.0 : balance * r;
+      double principalPart = emi - interest;
+
+      if (principalPart < 0) principalPart = 0;
+
+      if (i == totalMonths - 1 || principalPart > balance) {
+        principalPart = balance;
+      }
+
+      final installment = principalPart + interest;
+      final closingBalance =
+          (balance - principalPart).clamp(0.0, double.infinity).toDouble();
+
+      schedule.add({
+        'month': i + 1,
+        'opening_balance': balance,
+        'interest': interest,
+        'principal': principalPart,
+        'amount': installment,
+        'closing_balance': closingBalance,
+        'due_date': DateTime(startDate.year, startDate.month + i + 1, emiDay),
+      });
+
+      balance = closingBalance;
+      if (balance <= 0) break;
+    }
+
+    return schedule;
+  }
+
+  double reducingTotalInterest() {
+    final schedule = reducingSchedule();
+    return schedule.fold<double>(
+      0,
+      (sum, e) => sum + (e['interest'] as double),
+    );
+  }
+
+  double projectedInterest() {
+    if (interestRate <= 0) return 0;
+
+    if (interestType == InterestType.reducing &&
+        paymentStyle == PaymentStyle.fixed &&
+        totalMonths > 0) {
+      return reducingTotalInterest();
+    }
+
+    if (paymentStyle == PaymentStyle.fixed && totalMonths > 0) {
+      switch (interestType) {
+        case InterestType.simple:
+        case InterestType.flat:
+          if (period == InterestPeriod.monthly) {
+            return principal * (interestRate / 100.0) * totalMonths;
+          } else {
+            return principal * (interestRate / 100.0) * (totalMonths / 12.0);
+          }
+
+        case InterestType.compound:
+          if (period == InterestPeriod.monthly) {
+            final amount =
+                principal * math.pow(1 + (interestRate / 100.0), totalMonths);
+            return (amount - principal).toDouble();
+          } else {
+            final amount = principal *
+                math.pow(1 + ((interestRate / 100.0) / 12.0), totalMonths);
+            return (amount - principal).toDouble();
+          }
+
+        case InterestType.reducing:
+          return reducingTotalInterest();
+      }
+    }
+
+    return accruedInterest;
   }
 
   double get accruedInterest {
@@ -130,10 +260,12 @@ class LoanModel {
         return compoundInterest(asOf);
       case InterestType.flat:
         return flatRateInterest();
+      case InterestType.reducing:
+        return reducingTotalInterest();
     }
   }
 
-  double get totalAmount => principal + accruedInterest;
+  double get totalAmount => principal + projectedInterest();
 
   LoanModel copyWith({
     String? userId,

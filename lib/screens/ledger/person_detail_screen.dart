@@ -440,8 +440,16 @@ class _LoanCardState extends State<_LoanCard> {
     final color = isGave ? AppColors.income : AppColors.expense;
     final outstanding = loanP.outstandingAmount(loan.id);
     final paid = loanP.totalPaid(loan.id);
+
+    final shownInterest =
+        loan.paymentStyle == PaymentStyle.fixed && loan.totalMonths > 0
+            ? loan.projectedInterest()
+            : loan.accruedInterest;
+
+    final totalAmount = loan.principal + shownInterest;
+
     final progress =
-        loan.totalAmount > 0 ? (paid / loan.totalAmount).clamp(0.0, 1.0) : 0.0;
+        totalAmount > 0 ? (paid / totalAmount).clamp(0.0, 1.0) : 0.0;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -546,7 +554,7 @@ class _LoanCardState extends State<_LoanCard> {
                       Expanded(
                         child: _AmountItem(
                           label: 'વ્યાજ',
-                          amount: '$cur${_fmt(loan.accruedInterest)}',
+                          amount: '$cur${_fmt(shownInterest)}',
                           color: AppColors.warning,
                         ),
                       ),
@@ -560,7 +568,7 @@ class _LoanCardState extends State<_LoanCard> {
                       ),
                     ],
                   ),
-                  if (!isClosed && loan.totalAmount > 0) ...[
+                  if (!isClosed && totalAmount > 0) ...[
                     const SizedBox(height: 10),
                     Row(
                       children: [

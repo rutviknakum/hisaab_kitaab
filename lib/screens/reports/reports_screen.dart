@@ -4,13 +4,12 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/app_colors.dart';
+import '../../models/loan_model.dart';
 import '../../models/transaction_model.dart';
+import '../../providers/loan_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/transaction_provider.dart';
 
-// ─────────────────────────────────────────────────────────────
-//  TOP-LEVEL HELPERS  (no instance required — safe everywhere)
-// ─────────────────────────────────────────────────────────────
 String _fmt(double v) => NumberFormat('#,##,##0.00', 'en_IN').format(v);
 
 String _fmtShort(double v) {
@@ -35,9 +34,6 @@ TextStyle _guj({
       height: height,
     );
 
-// ─────────────────────────────────────────────────────────────
-//  REPORTS SCREEN  (root widget)
-// ─────────────────────────────────────────────────────────────
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
 
@@ -72,8 +68,10 @@ class _ReportsScreenState extends State<ReportsScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('રિપોર્ટ 📊',
-            style: _guj(fontSize: 18, fontWeight: FontWeight.w800)),
+        title: Text(
+          'રિપોર્ટ 📊',
+          style: _guj(fontSize: 18, fontWeight: FontWeight.w800),
+        ),
         bottom: TabBar(
           controller: _tab,
           labelStyle: _guj(fontWeight: FontWeight.w700),
@@ -102,9 +100,6 @@ class _ReportsScreenState extends State<ReportsScreen>
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  TAB 1 — MONTHLY OVERVIEW
-// ─────────────────────────────────────────────────────────────
 class _MonthlyTab extends StatelessWidget {
   final int year;
   final int month;
@@ -118,16 +113,19 @@ class _MonthlyTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer2<TransactionProvider, SettingsProvider>(
-      builder: (ctx, txnP, settP, _) {
+    return Consumer3<TransactionProvider, SettingsProvider, LoanProvider>(
+      builder: (ctx, txnP, settP, loanP, _) {
         final cur = settP.currency;
         final txns = txnP.getByMonth(year, month);
+
         final income = txns
             .where((t) => t.type == TransactionType.income)
             .fold(0.0, (s, t) => s + t.amount);
+
         final expense = txns
             .where((t) => t.type == TransactionType.expense)
             .fold(0.0, (s, t) => s + t.amount);
+
         final saved = income - expense;
 
         final expenseTxns = txns
@@ -135,18 +133,27 @@ class _MonthlyTab extends StatelessWidget {
             .toList()
           ..sort((a, b) => b.amount.compareTo(a.amount));
 
+        double toReceive = 0;
+        double toPay = 0;
+        for (final loan in loanP.loans) {
+          final out = loanP.outstandingAmount(loan.id);
+          if (out <= 0) continue;
+          if (loan.type == LoanType.gave) {
+            toReceive += out;
+          } else {
+            toPay += out;
+          }
+        }
+
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           children: [
-            // ── Month picker ─────────────────────────
             _MonthPicker(
               year: year,
               month: month,
               onMonthChanged: onMonthChanged,
             ),
             const SizedBox(height: 16),
-
-            // ── KPI row: Income & Expense ─────────────
             Row(
               children: [
                 Expanded(
@@ -171,8 +178,6 @@ class _MonthlyTab extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-
-            // ── KPI: Savings ──────────────────────────
             _KpiCard(
               label: 'બચત',
               amount: '${saved >= 0 ? '+' : ''}$cur ${_fmt(saved)}',
@@ -182,16 +187,12 @@ class _MonthlyTab extends StatelessWidget {
               wide: true,
             ),
             const SizedBox(height: 24),
-
-            // ── Week-wise bar chart ───────────────────
             if (txns.isNotEmpty) ...[
               const _SectionTitle('Week-wise ખર્ચ'),
               const SizedBox(height: 12),
               _WeekBarChart(txns: txns),
               const SizedBox(height: 24),
             ],
-
-            // ── Income vs Expense donut ───────────────
             if (income > 0 || expense > 0) ...[
               const _SectionTitle('આવક vs ખર્ચ'),
               const SizedBox(height: 12),
@@ -202,8 +203,6 @@ class _MonthlyTab extends StatelessWidget {
               ),
               const SizedBox(height: 24),
             ],
-
-            // ── Top 5 expenses ────────────────────────
             if (expenseTxns.isNotEmpty) ...[
               const _SectionTitle('Top 5 ખર્ચ'),
               const SizedBox(height: 8),
@@ -213,9 +212,39 @@ class _MonthlyTab extends StatelessWidget {
                 limit: 5,
               ),
             ],
-
-            // ── Empty state ───────────────────────────
-            if (txns.isEmpty)
+            if (toReceive > 0 || toPay > 0) ...[
+              const SizedBox(height: 24),
+              const _SectionTitle('💰 ઉઘરાણી / ઉધાર'),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  if (toReceive > 0)
+                    Expanded(
+                      child: _KpiCard(
+                        label: 'ઉઘરાણી (મળવાનું)',
+                        amount: '$cur ${_fmt(toReceive)}',
+                        color: AppColors.income,
+                        icon: '💸',
+                        bg: AppColors.incomeLight,
+                      ),
+                    ),
+                  if (toReceive > 0 && toPay > 0) const SizedBox(width: 10),
+                  if (toPay > 0)
+                    Expanded(
+                      child: _KpiCard(
+                        label: 'ઉધાર (આપવાનું)',
+                        amount: '$cur ${_fmt(toPay)}',
+                        color: AppColors.expense,
+                        icon: '🤲',
+                        bg: AppColors.expenseLight,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _LoanPersonList(loanP: loanP, currency: cur),
+            ],
+            if (txns.isEmpty && toReceive == 0 && toPay == 0)
               _EmptyState(
                 message: 'આ મહિને કોઈ નોંધ નથી.\nઉપર + button વડે ઉમેરો.',
               ),
@@ -226,9 +255,6 @@ class _MonthlyTab extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  TAB 2 — YEARLY OVERVIEW
-// ─────────────────────────────────────────────────────────────
 class _YearlyTab extends StatelessWidget {
   final int year;
   const _YearlyTab({required this.year});
@@ -239,7 +265,6 @@ class _YearlyTab extends StatelessWidget {
       builder: (ctx, txnP, settP, _) {
         final cur = settP.currency;
 
-        // Build month-wise data for all 12 months
         final monthData = List.generate(12, (i) {
           final m = i + 1;
           final txns = txnP.getByMonth(year, m);
@@ -265,7 +290,6 @@ class _YearlyTab extends StatelessWidget {
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           children: [
-            // ── Year badge ────────────────────────────
             Center(
               child: Container(
                 padding:
@@ -285,8 +309,6 @@ class _YearlyTab extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-
-            // ── Yearly savings KPI ────────────────────
             _KpiCard(
               label: '$year ની કુલ બચત',
               amount: '${totalSav >= 0 ? '+' : ''}$cur ${_fmt(totalSav)}',
@@ -298,8 +320,6 @@ class _YearlyTab extends StatelessWidget {
               wide: true,
             ),
             const SizedBox(height: 10),
-
-            // ── Total income / expense ────────────────
             Row(
               children: [
                 Expanded(
@@ -324,11 +344,8 @@ class _YearlyTab extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 24),
-
-            // ── 12-month line chart ───────────────────
             const _SectionTitle('12 મહિના — Income vs Expense'),
             const SizedBox(height: 4),
-            // Legend
             Row(
               children: [
                 _ChartLegendDot(color: AppColors.income, label: 'આવક'),
@@ -339,8 +356,6 @@ class _YearlyTab extends StatelessWidget {
             const SizedBox(height: 12),
             _YearLineChart(monthData: monthData),
             const SizedBox(height: 24),
-
-            // ── Month table ───────────────────────────
             const _SectionTitle('Month-wise Summary'),
             const SizedBox(height: 8),
             _MonthTable(monthData: monthData, currency: cur),
@@ -351,9 +366,6 @@ class _YearlyTab extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  TAB 3 — CATEGORY BREAKDOWN
-// ─────────────────────────────────────────────────────────────
 class _CategoryTab extends StatefulWidget {
   final int year;
   final int month;
@@ -382,6 +394,20 @@ class _CategoryTabState extends State<_CategoryTab> {
     Color(0xFFAB47BC),
   ];
 
+  String _safeCategoryName(TransactionModel t) {
+    final raw = t.categoryName.trim();
+    if (raw.isEmpty || raw == 'કેટેગરી') {
+      final title = t.title.trim();
+      return title.isNotEmpty ? title : 'અન્ય';
+    }
+    return raw;
+  }
+
+  String _safeCategoryEmoji(TransactionModel t) {
+    final raw = t.categoryEmoji.trim();
+    return raw.isEmpty ? '📁' : raw;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer2<TransactionProvider, SettingsProvider>(
@@ -392,11 +418,12 @@ class _CategoryTabState extends State<_CategoryTab> {
             .where((t) => t.type == _viewType)
             .toList();
 
-        // Group by category label
         final Map<String, double> catMap = {};
         for (final t in txns) {
-          catMap[t.category.label] = (catMap[t.category.label] ?? 0) + t.amount;
+          final key = '${_safeCategoryEmoji(t)} ${_safeCategoryName(t)}';
+          catMap[key] = (catMap[key] ?? 0) + t.amount;
         }
+
         final sorted = catMap.entries.toList()
           ..sort((a, b) => b.value.compareTo(a.value));
         final total = sorted.fold(0.0, (s, e) => s + e.value);
@@ -404,7 +431,6 @@ class _CategoryTabState extends State<_CategoryTab> {
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           children: [
-            // ── Income / Expense toggle ───────────────
             SegmentedButton<TransactionType>(
               style: SegmentedButton.styleFrom(
                 selectedBackgroundColor: AppColors.primary,
@@ -429,8 +455,6 @@ class _CategoryTabState extends State<_CategoryTab> {
               }),
             ),
             const SizedBox(height: 20),
-
-            // ── Total chip ────────────────────────────
             if (total > 0)
               Center(
                 child: Container(
@@ -455,15 +479,12 @@ class _CategoryTabState extends State<_CategoryTab> {
                 ),
               ),
             const SizedBox(height: 16),
-
-            // ── Empty state ───────────────────────────
             if (sorted.isEmpty)
               _EmptyState(
                 message:
                     'આ મહિને ${_viewType == TransactionType.expense ? "ખર્ચ" : "આવક"} ની નોંધ નથી.',
               )
             else ...[
-              // Pie chart
               _SectionTitle(
                 '${_viewType == TransactionType.expense ? "ખર્ચ" : "આવક"} Breakdown',
               ),
@@ -480,8 +501,6 @@ class _CategoryTabState extends State<_CategoryTab> {
                 ),
               ),
               const SizedBox(height: 24),
-
-              // Category rows
               const _SectionTitle('Category-wise detail'),
               const SizedBox(height: 8),
               ...sorted.asMap().entries.map(
@@ -501,11 +520,102 @@ class _CategoryTabState extends State<_CategoryTab> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  CHART WIDGETS
-// ─────────────────────────────────────────────────────────────
+class _LoanPersonList extends StatelessWidget {
+  final LoanProvider loanP;
+  final String currency;
 
-/// Week-wise expense bar chart (W1–W5)
+  const _LoanPersonList({
+    required this.loanP,
+    required this.currency,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final receiveMap = <String, double>{};
+    final payMap = <String, double>{};
+
+    for (final loan in loanP.loans) {
+      if (loan.status != LoanStatus.active) continue;
+      final out = loanP.outstandingAmount(loan.id);
+      if (out <= 0) continue;
+
+      if (loan.type == LoanType.gave) {
+        receiveMap[loan.personId] = (receiveMap[loan.personId] ?? 0) + out;
+      } else {
+        payMap[loan.personId] = (payMap[loan.personId] ?? 0) + out;
+      }
+    }
+
+    if (receiveMap.isEmpty && payMap.isEmpty) return const SizedBox.shrink();
+
+    final allEntries = [
+      ...receiveMap.entries.map((e) => (
+            person: loanP.getPersonById(e.key),
+            amount: e.value,
+            isReceive: true,
+          )),
+      ...payMap.entries.map((e) => (
+            person: loanP.getPersonById(e.key),
+            amount: e.value,
+            isReceive: false,
+          )),
+    ]..sort((a, b) => b.amount.compareTo(a.amount));
+
+    return Column(
+      children: allEntries.map((entry) {
+        if (entry.person == null) return const SizedBox.shrink();
+        final color = entry.isReceive ? AppColors.income : AppColors.expense;
+        final bg =
+            entry.isReceive ? AppColors.incomeLight : AppColors.expenseLight;
+        final icon = entry.isReceive ? '💸' : '🤲';
+        final label = entry.isReceive ? 'ઉઘરાણી' : 'ઉધાર';
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.2)),
+          ),
+          child: Row(
+            children: [
+              Text(icon, style: const TextStyle(fontSize: 20)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.person!.name,
+                      style: _guj(fontSize: 13, fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      label,
+                      style: _guj(
+                        fontSize: 10,
+                        color: color.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '$currency ${_fmt(entry.amount)}',
+                style: _guj(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
 class _WeekBarChart extends StatelessWidget {
   final List<TransactionModel> txns;
   const _WeekBarChart({required this.txns});
@@ -601,7 +711,6 @@ class _WeekBarChart extends StatelessWidget {
   }
 }
 
-/// Income vs Expense donut chart with legend
 class _IncomeExpenseDonut extends StatelessWidget {
   final double income;
   final double expense;
@@ -622,7 +731,6 @@ class _IncomeExpenseDonut extends StatelessWidget {
       height: 200,
       child: Row(
         children: [
-          // Donut
           Expanded(
             flex: 3,
             child: PieChart(
@@ -656,7 +764,6 @@ class _IncomeExpenseDonut extends StatelessWidget {
               ),
             ),
           ),
-          // Legend
           Expanded(
             flex: 2,
             child: Column(
@@ -683,14 +790,12 @@ class _IncomeExpenseDonut extends StatelessWidget {
   }
 }
 
-/// 12-month income vs expense line chart
 class _YearLineChart extends StatelessWidget {
   final List<Map<String, dynamic>> monthData;
   const _YearLineChart({required this.monthData});
 
   @override
   Widget build(BuildContext context) {
-    // Compute maxY safely
     double maxVal = 0;
     for (final d in monthData) {
       final inc = d['income'] as double;
@@ -744,20 +849,22 @@ class _YearLineChart extends StatelessWidget {
           lineBarsData: [
             line(
               List.generate(
-                  12,
-                  (i) => FlSpot(
-                        i.toDouble(),
-                        monthData[i]['income'] as double,
-                      )),
+                12,
+                (i) => FlSpot(
+                  i.toDouble(),
+                  monthData[i]['income'] as double,
+                ),
+              ),
               AppColors.income,
             ),
             line(
               List.generate(
-                  12,
-                  (i) => FlSpot(
-                        i.toDouble(),
-                        monthData[i]['expense'] as double,
-                      )),
+                12,
+                (i) => FlSpot(
+                  i.toDouble(),
+                  monthData[i]['expense'] as double,
+                ),
+              ),
               AppColors.expense,
             ),
           ],
@@ -820,7 +927,6 @@ class _YearLineChart extends StatelessWidget {
   }
 }
 
-/// Interactive category pie chart
 class _CategoryPieChart extends StatelessWidget {
   final List<MapEntry<String, double>> data;
   final List<Color> colors;
@@ -878,11 +984,6 @@ class _CategoryPieChart extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  HELPER WIDGETS
-// ─────────────────────────────────────────────────────────────
-
-/// Previous / Next month navigation bar
 class _MonthPicker extends StatelessWidget {
   final int year;
   final int month;
@@ -974,7 +1075,6 @@ class _MonthPicker extends StatelessWidget {
   }
 }
 
-/// Summary card for KPI values
 class _KpiCard extends StatelessWidget {
   final String label;
   final String amount;
@@ -1017,17 +1117,23 @@ class _KpiCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(label,
-                          style: _guj(
-                              fontSize: 11,
-                              color: color.withValues(alpha: 0.8))),
+                      Text(
+                        label,
+                        style: _guj(
+                          fontSize: 11,
+                          color: color.withValues(alpha: 0.8),
+                        ),
+                      ),
                       const SizedBox(height: 2),
-                      Text(amount,
-                          style: _guj(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                              color: color),
-                          overflow: TextOverflow.ellipsis),
+                      Text(
+                        amount,
+                        style: _guj(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: color,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ],
                   ),
                 ),
@@ -1038,23 +1144,29 @@ class _KpiCard extends StatelessWidget {
               children: [
                 Text(icon, style: const TextStyle(fontSize: 22)),
                 const SizedBox(height: 6),
-                Text(label,
-                    style: _guj(
-                        fontSize: 10, color: color.withValues(alpha: 0.8))),
+                Text(
+                  label,
+                  style: _guj(
+                    fontSize: 10,
+                    color: color.withValues(alpha: 0.8),
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(amount,
-                    style: _guj(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: color),
-                    overflow: TextOverflow.ellipsis),
+                Text(
+                  amount,
+                  style: _guj(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ],
             ),
     );
   }
 }
 
-/// Category breakdown row with progress bar
 class _CategoryRow extends StatelessWidget {
   final String label;
   final double amount;
@@ -1086,26 +1198,27 @@ class _CategoryRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              // Color dot
               Container(
                 width: 10,
                 height: 10,
                 decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
               const SizedBox(width: 8),
-              // Category name
               Expanded(
-                child: Text(label,
-                    style: _guj(fontSize: 13, fontWeight: FontWeight.w600)),
+                child: Text(
+                  label,
+                  style: _guj(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
               ),
-              // Amount
               Text(
                 '$currency ${_fmt(amount)}',
                 style: _guj(
-                    fontSize: 13, fontWeight: FontWeight.w800, color: color),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
               ),
               const SizedBox(width: 8),
-              // Percentage
               Text(
                 '${(pct * 100).toStringAsFixed(1)}%',
                 style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
@@ -1128,7 +1241,6 @@ class _CategoryRow extends StatelessWidget {
   }
 }
 
-/// Top-N transaction list (highest expense first)
 class _TopTransactions extends StatelessWidget {
   final List<TransactionModel> txns;
   final String currency;
@@ -1140,6 +1252,20 @@ class _TopTransactions extends StatelessWidget {
     required this.limit,
   });
 
+  String _safeCategoryName(TransactionModel t) {
+    final raw = t.categoryName.trim();
+    if (raw.isEmpty || raw == 'કેટેગરી') {
+      final title = t.title.trim();
+      return title.isNotEmpty ? title : 'અન્ય';
+    }
+    return raw;
+  }
+
+  String _safeCategoryEmoji(TransactionModel t) {
+    final raw = t.categoryEmoji.trim();
+    return raw.isEmpty ? '📁' : raw;
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = txns.take(limit).toList();
@@ -1147,6 +1273,9 @@ class _TopTransactions extends StatelessWidget {
       children: List.generate(items.length, (idx) {
         final t = items[idx];
         final rank = idx + 1;
+        final safeName = _safeCategoryName(t);
+        final safeEmoji = _safeCategoryEmoji(t);
+
         return Container(
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1156,7 +1285,6 @@ class _TopTransactions extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Rank badge
               Container(
                 width: 28,
                 height: 28,
@@ -1181,23 +1309,24 @@ class _TopTransactions extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              // Category icon
-              Text(t.category.icon, style: const TextStyle(fontSize: 18)),
+              Text(safeEmoji, style: const TextStyle(fontSize: 18)),
               const SizedBox(width: 8),
-              // Title + category
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(t.title,
-                        style: _guj(fontSize: 13, fontWeight: FontWeight.w600),
-                        overflow: TextOverflow.ellipsis),
-                    Text(t.category.label,
-                        style: _guj(fontSize: 10, color: Colors.grey.shade500)),
+                    Text(
+                      t.title,
+                      style: _guj(fontSize: 13, fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      '$safeEmoji $safeName',
+                      style: _guj(fontSize: 10, color: Colors.grey.shade500),
+                    ),
                   ],
                 ),
               ),
-              // Amount
               Text(
                 '$currency ${_fmt(t.amount)}',
                 style: _guj(
@@ -1214,7 +1343,6 @@ class _TopTransactions extends StatelessWidget {
   }
 }
 
-/// 12-row summary table for yearly view
 class _MonthTable extends StatelessWidget {
   final List<Map<String, dynamic>> monthData;
   final String currency;
@@ -1239,7 +1367,6 @@ class _MonthTable extends StatelessWidget {
     'December',
   ];
 
-  // ✅ Map instead of Record tuple — works on all Dart SDK versions
   static const _cols = [
     {'label': 'Income', 'colorVal': 0xFF43A047},
     {'label': 'Expense', 'colorVal': 0xFFE53935},
@@ -1256,18 +1383,19 @@ class _MonthTable extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // ── Header row ──────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             child: Row(
               children: [
                 Expanded(
-                  child: Text('Month',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11,
-                        color: Colors.grey.shade500,
-                      )),
+                  child: Text(
+                    'Month',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                      color: Colors.grey.shade500,
+                    ),
+                  ),
                 ),
                 ..._cols.map(
                   (c) => SizedBox(
@@ -1287,8 +1415,6 @@ class _MonthTable extends StatelessWidget {
             ),
           ),
           const Divider(height: 1),
-
-          // ── Data rows ───────────────────────────────
           ...monthData.asMap().entries.map((e) {
             final i = e.key;
             final d = e.value;
@@ -1304,7 +1430,6 @@ class _MonthTable extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Row(
                     children: [
-                      // Month name
                       Expanded(
                         child: Text(
                           _monthNames[i],
@@ -1315,11 +1440,10 @@ class _MonthTable extends StatelessWidget {
                           ),
                         ),
                       ),
-                      // Income
                       SizedBox(
                         width: 72,
                         child: Text(
-                          hasData ? _fmtShort(inc) : '—',
+                          hasData ? _fmtShort(inc) : '-',
                           textAlign: TextAlign.right,
                           style: TextStyle(
                             fontSize: 11,
@@ -1330,11 +1454,10 @@ class _MonthTable extends StatelessWidget {
                           ),
                         ),
                       ),
-                      // Expense
                       SizedBox(
                         width: 72,
                         child: Text(
-                          hasData ? _fmtShort(exp) : '—',
+                          hasData ? _fmtShort(exp) : '-',
                           textAlign: TextAlign.right,
                           style: TextStyle(
                             fontSize: 11,
@@ -1345,20 +1468,19 @@ class _MonthTable extends StatelessWidget {
                           ),
                         ),
                       ),
-                      // Saved
                       SizedBox(
                         width: 72,
                         child: Text(
-                          hasData ? _fmtShort(sav) : '—',
+                          hasData ? _fmtShort(sav) : '-',
                           textAlign: TextAlign.right,
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color: !hasData
-                                ? Colors.grey.shade300
-                                : sav >= 0
+                            color: hasData
+                                ? (sav >= 0
                                     ? AppColors.income
-                                    : AppColors.expense,
+                                    : AppColors.expense)
+                                : Colors.grey.shade300,
                           ),
                         ),
                       ),
@@ -1366,11 +1488,7 @@ class _MonthTable extends StatelessWidget {
                   ),
                 ),
                 if (i < 11)
-                  Divider(
-                    height: 1,
-                    color: Colors.grey.shade100,
-                    indent: 12,
-                  ),
+                  Divider(height: 1, color: Colors.grey.withValues(alpha: 0.1)),
               ],
             );
           }),
@@ -1380,11 +1498,24 @@ class _MonthTable extends StatelessWidget {
   }
 }
 
-/// Colored dot + label + amount — used in donut legend
+class _SectionTitle extends StatelessWidget {
+  final String title;
+  const _SectionTitle(this.title);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: _guj(fontSize: 15, fontWeight: FontWeight.w800),
+    );
+  }
+}
+
 class _Legend extends StatelessWidget {
   final Color color;
   final String label;
   final String amount;
+
   const _Legend({
     required this.color,
     required this.label,
@@ -1404,10 +1535,9 @@ class _Legend extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: _guj(fontSize: 10, color: Colors.grey.shade500)),
+            Text(label, style: _guj(fontSize: 11, color: Colors.grey.shade500)),
             Text(amount,
-                style: _guj(
-                    fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+                style: _guj(fontSize: 13, fontWeight: FontWeight.w800)),
           ],
         ),
       ],
@@ -1415,16 +1545,15 @@ class _Legend extends StatelessWidget {
   }
 }
 
-/// Small colored dot + text — used in yearly chart legend
 class _ChartLegendDot extends StatelessWidget {
   final Color color;
   final String label;
+
   const _ChartLegendDot({required this.color, required this.label});
 
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 10,
@@ -1438,19 +1567,6 @@ class _ChartLegendDot extends StatelessWidget {
   }
 }
 
-/// Section heading with consistent styling
-class _SectionTitle extends StatelessWidget {
-  final String title;
-  const _SectionTitle(this.title);
-
-  @override
-  Widget build(BuildContext context) => Text(
-        title,
-        style: _guj(fontSize: 14, fontWeight: FontWeight.w800),
-      );
-}
-
-/// Friendly empty state with emoji
 class _EmptyState extends StatelessWidget {
   final String message;
   const _EmptyState({required this.message});
@@ -1458,7 +1574,7 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
+      padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
           const Text('📭', style: TextStyle(fontSize: 52)),
@@ -1466,7 +1582,11 @@ class _EmptyState extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: _guj(fontSize: 14, color: Colors.grey),
+            style: _guj(
+              fontSize: 14,
+              color: Colors.grey.shade500,
+              height: 1.6,
+            ),
           ),
         ],
       ),

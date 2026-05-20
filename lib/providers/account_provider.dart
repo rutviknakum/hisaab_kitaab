@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../main.dart';
 import '../database/db_constants.dart';
 import '../models/account_model.dart';
+import '../models/transaction_model.dart';
 
 class AccountProvider with ChangeNotifier {
   List<AccountModel> _accounts = [];
@@ -75,6 +76,7 @@ class AccountProvider with ChangeNotifier {
   Future<void> updateBalance(String accountId, double newBalance) async {
     final account = getById(accountId);
     if (account == null) return;
+
     final updated = account.copyWith(balance: newBalance);
     await updateAccount(updated);
   }
@@ -91,6 +93,44 @@ class AccountProvider with ChangeNotifier {
         isIncome ? account.balance + amount : account.balance - amount;
 
     await updateBalance(accountId, newBalance);
+  }
+
+  Future<void> recalculateBalancesFromTransactions() async {
+    final userId = _currentUserId;
+    if (userId == null) throw Exception('User not logged in');
+
+    final txnMaps = await supabase
+        .from(DbConstants.tTransactions)
+        .select()
+        .eq(DbConstants.cUserId, userId);
+
+    final transactions = (txnMaps as List)
+        .map((e) => TransactionModel.fromMap(Map<String, dynamic>.from(e)))
+        .toList();
+
+    final Map<String, double> balances = {
+      for (final acc in _accounts) acc.id: 0.0,
+    };
+
+    for (final txn in transactions) {
+      final current = balances[txn.accountId] ?? 0.0;
+      balances[txn.accountId] = txn.type == TransactionType.income
+          ? current + txn.amount
+          : current - txn.amount;
+    }
+
+    for (final acc in _accounts) {
+      final correctedBalance = balances[acc.id] ?? 0.0;
+      final updated = acc.copyWith(balance: correctedBalance);
+
+      await supabase
+          .from(DbConstants.tAccounts)
+          .update(updated.toMap())
+          .eq(DbConstants.cId, acc.id)
+          .eq(DbConstants.cUserId, userId);
+    }
+
+    await loadAccounts();
   }
 
   Future<void> deleteAccount(String id) async {

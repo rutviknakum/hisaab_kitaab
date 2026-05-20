@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # hisaab_kitaab
 
 A new Flutter project.
@@ -15,3 +16,6 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+=======
+# hisaab_kitaab
+>>>>>>> 58533e1d592ca466dbc6e801c24c42b2796c5ce6

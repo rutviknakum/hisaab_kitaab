@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_colors.dart';
 import '../../providers/settings_provider.dart';
-import '../home/main_navigation.dart';
+import '../auth/auth_wrapper.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -50,8 +50,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     if (!mounted) return;
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => const MainNavigation()),
+      MaterialPageRoute(builder: (_) => const AuthWrapper()),
     );
+  }
+
+  @override
+  void dispose() {
+    _pageCtrl.dispose();
+    super.dispose();
   }
 
   @override
@@ -68,17 +74,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Skip button
               Align(
                 alignment: Alignment.topRight,
                 child: TextButton(
                   onPressed: _finish,
-                  child: const Text('છોડો',
-                      style: TextStyle(color: Colors.white70, fontSize: 14)),
+                  child: const Text(
+                    'છોડો',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontFamily: 'NotoSansGujarati',
+                    ),
+                  ),
                 ),
               ),
-
-              // Pages
               Expanded(
                 child: PageView.builder(
                   controller: _pageCtrl,
@@ -87,8 +96,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   itemBuilder: (_, i) => _pages[i],
                 ),
               ),
-
-              // Dots
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(
@@ -106,8 +113,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 ),
               ),
               const SizedBox(height: 32),
-
-              // Next / Start button
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: ElevatedButton(
@@ -125,9 +130,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  child: Text(_currentPage == _pages.length - 1
-                      ? 'શરૂ કરો 🚀'
-                      : 'આગળ →'),
+                  child: Text(
+                    _currentPage == _pages.length - 1 ? 'શરૂ કરો 🚀' : 'આગળ →',
+                  ),
                 ),
               ),
               const SizedBox(height: 32),
@@ -159,23 +164,27 @@ class _OnboardPage extends StatelessWidget {
         children: [
           Text(icon, style: const TextStyle(fontSize: 80)),
           const SizedBox(height: 32),
-          Text(title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 26,
-                fontWeight: FontWeight.w800,
-                fontFamily: 'NotoSansGujarati',
-              )),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              fontFamily: 'NotoSansGujarati',
+            ),
+          ),
           const SizedBox(height: 16),
-          Text(desc,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 16,
-                height: 1.6,
-                fontFamily: 'NotoSansGujarati',
-              )),
+          Text(
+            desc,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 16,
+              height: 1.6,
+              fontFamily: 'NotoSansGujarati',
+            ),
+          ),
         ],
       ),
     );

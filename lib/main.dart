@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hisaab_kitaab/providers/category_provider.dart';
+import 'package:hisaab_kitaab/providers/profile_provider.dart';
 import 'package:hisaab_kitaab/screens/splash/splash_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
@@ -51,6 +53,12 @@ Future<void> main() async {
         ),
         ChangeNotifierProvider(
           create: (_) => LoanProvider()..loadAll(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => CategoryProvider()..loadCategories(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ProfileProvider(),
         ),
       ],
       child: const HisaabKitaabApp(),

@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+
 import '../../core/app_colors.dart';
+import '../../models/app_category_model.dart';
 import '../../models/transaction_model.dart';
 import '../../providers/account_provider.dart';
-import '../../providers/transaction_provider.dart';
+import '../../providers/category_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/transaction_provider.dart';
 
 class AddTransactionScreen extends StatefulWidget {
   final TransactionModel? existing;
@@ -29,51 +32,78 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
   final _amountCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
 
-  late TabController _typeTab;
+  late final TabController _typeTab;
   TransactionType _type = TransactionType.expense;
-  TransactionCategory? _category;
+  AppCategoryModel? _selectedCategory;
   String? _accountId;
   DateTime _date = DateTime.now();
   bool _saving = false;
 
   bool get _isEdit => widget.existing != null;
 
+  List<AppCategoryModel> get _categories {
+    final type = _type == TransactionType.income ? 'income' : 'expense';
+    return context.watch<CategoryProvider>().byType(type);
+  }
+
   @override
   void initState() {
     super.initState();
+
     _typeTab = TabController(length: 2, vsync: this);
     _typeTab.addListener(() {
-      if (!_typeTab.indexIsChanging) return;
+      if (_typeTab.indexIsChanging) return;
       setState(() {
         _type = _typeTab.index == 0
             ? TransactionType.income
             : TransactionType.expense;
-        _category = null;
+        _selectedCategory = null;
       });
     });
 
-    if (_isEdit) {
-      final t = widget.existing!;
-      _titleCtrl.text = t.title;
-      _amountCtrl.text = t.amount.toStringAsFixed(2);
-      _noteCtrl.text = t.note ?? '';
-      _type = t.type;
-      _category = t.category;
-      _accountId = t.accountId;
-      _date = t.date;
-      _typeTab.index = t.type == TransactionType.income ? 0 : 1;
-    } else {
-      _type = widget.initialType ?? TransactionType.expense;
-      _typeTab.index = _type == TransactionType.income ? 0 : 1;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await context.read<CategoryProvider>().loadCategories();
+      if (!mounted) return;
 
-      // Default first account
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_isEdit) {
+        final t = widget.existing!;
+        _titleCtrl.text = t.title;
+        _amountCtrl.text = t.amount.toStringAsFixed(2);
+        _noteCtrl.text = t.note ?? '';
+        _type = t.type;
+        _accountId = t.accountId;
+        _date = t.date;
+        _typeTab.index = t.type == TransactionType.income ? 0 : 1;
+
+        final categories = _categories;
+        try {
+          _selectedCategory =
+              categories.firstWhere((c) => c.id == t.categoryId);
+        } catch (_) {
+          _selectedCategory = AppCategoryModel(
+            id: t.categoryId,
+            userId: t.userId,
+            name: t.categoryName,
+            emoji: t.categoryEmoji,
+            type: t.type == TransactionType.income ? 'income' : 'expense',
+            isDefault: false,
+            isDeleted: false,
+            createdAt: t.createdAt,
+            updatedAt: t.createdAt,
+          );
+        }
+      } else {
+        _type = widget.initialType ?? TransactionType.expense;
+        _typeTab.index = _type == TransactionType.income ? 0 : 1;
+
         final accounts = context.read<AccountProvider>().activeAccounts;
         if (accounts.isNotEmpty) {
-          setState(() => _accountId = accounts.first.id);
+          _accountId = accounts.first.id;
         }
-      });
-    }
+      }
+
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -85,68 +115,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
     super.dispose();
   }
 
-  List<TransactionCategory> get _categories => CategoryInfo.byType(_type);
-
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_category == null) {
-      _showSnack('Category પસંદ કરો', isError: true);
-      return;
-    }
-    if (_accountId == null) {
-      _showSnack('ખાતું પસંદ કરો', isError: true);
-      return;
-    }
-
-    setState(() => _saving = true);
-    final txnP = context.read<TransactionProvider>();
-    final accP = context.read<AccountProvider>();
-    final amount = double.parse(_amountCtrl.text);
-
-    final txn = TransactionModel(
-      id: widget.existing?.id,
-      title: _titleCtrl.text.trim(),
-      amount: amount,
-      type: _type,
-      category: _category!,
-      accountId: _accountId!,
-      date: _date,
-      note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
-      userId: '',
-    );
-
-    if (_isEdit) {
-      // Reverse old balance effect
-      await accP.adjustBalance(
-        widget.existing!.accountId,
-        widget.existing!.amount,
-        widget.existing!.type == TransactionType.expense,
-      );
-      // Apply new
-      await accP.adjustBalance(
-          _accountId!, amount, _type == TransactionType.income);
-      await txnP.updateTransaction(txn);
-      _showSnack('નોંધ સુધારાઈ ✅');
-    } else {
-      await accP.adjustBalance(
-          _accountId!, amount, _type == TransactionType.income);
-      await txnP.addTransaction(txn);
-      _showSnack('નોંધ સાચવાઈ ✅');
-    }
-
-    setState(() => _saving = false);
-    if (mounted) Navigator.pop(context);
-  }
-
-  void _showSnack(String msg, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content:
-          Text(msg, style: const TextStyle(fontFamily: 'NotoSansGujarati')),
-      backgroundColor: isError ? AppColors.expense : AppColors.income,
-      behavior: SnackBarBehavior.floating,
-    ));
-  }
-
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -155,13 +123,264 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
       lastDate: DateTime.now(),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme:
-              Theme.of(ctx).colorScheme.copyWith(primary: AppColors.primary),
+          colorScheme: Theme.of(ctx).colorScheme.copyWith(
+                primary: AppColors.primary,
+              ),
         ),
         child: child!,
       ),
     );
-    if (picked != null) setState(() => _date = picked);
+    if (picked != null) {
+      setState(() => _date = picked);
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (_accountId == null) {
+      _showSnack('ખાતું પસંદ કરો', isError: true);
+      return;
+    }
+
+    if (_selectedCategory == null) {
+      _showSnack('કેટેગરી પસંદ કરો', isError: true);
+      return;
+    }
+
+    final amount = double.tryParse(_amountCtrl.text.trim());
+    if (amount == null || amount <= 0) {
+      _showSnack('સાચી રકમ લખો', isError: true);
+      return;
+    }
+
+    setState(() => _saving = true);
+
+    try {
+      final txnP = context.read<TransactionProvider>();
+      final accP = context.read<AccountProvider>();
+
+      final txn = TransactionModel(
+        id: widget.existing?.id,
+        userId: widget.existing?.userId ?? '',
+        title: _titleCtrl.text.trim(),
+        amount: amount,
+        type: _type,
+        categoryId: _selectedCategory!.id,
+        categoryName: _selectedCategory!.name,
+        categoryEmoji: _selectedCategory!.emoji,
+        accountId: _accountId!,
+        date: _date,
+        note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+      );
+
+      if (_isEdit) {
+        final oldTxn = widget.existing!;
+        final oldWasIncome = oldTxn.type == TransactionType.income;
+        final newIsIncome = _type == TransactionType.income;
+
+        await accP.adjustBalance(
+          oldTxn.accountId,
+          oldTxn.amount,
+          !oldWasIncome,
+        );
+
+        await accP.adjustBalance(
+          _accountId!,
+          amount,
+          newIsIncome,
+        );
+
+        await txnP.updateTransaction(txn);
+        _showSnack('નોંધ સુધારાઈ ✅');
+      } else {
+        await accP.adjustBalance(
+          _accountId!,
+          amount,
+          _type == TransactionType.income,
+        );
+
+        await txnP.addTransaction(txn);
+        _showSnack('નોંધ સાચવાઈ ✅');
+      }
+
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      _showSnack('સાચવવામાં તકલીફ આવી: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _showSnack(String msg, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          msg,
+          style: const TextStyle(fontFamily: 'NotoSansGujarati'),
+        ),
+        backgroundColor: isError ? AppColors.expense : AppColors.income,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  InputDecoration _inputDec({
+    required String label,
+    String? hint,
+    IconData? icon,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon:
+          icon != null ? Icon(icon, color: AppColors.primary, size: 18) : null,
+      labelStyle: const TextStyle(
+        fontFamily: 'NotoSansGujarati',
+        fontSize: 13,
+      ),
+      hintStyle: const TextStyle(
+        fontFamily: 'NotoSansGujarati',
+        fontSize: 12,
+      ),
+      border: InputBorder.none,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+    );
+  }
+
+  Widget _fieldCard({required Widget child}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withOpacity(0.12),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: child,
+    );
+  }
+
+  Future<void> _openNewCategorySheet() async {
+    final nameCtrl = TextEditingController();
+    final emojiCtrl = TextEditingController(text: '📁');
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'નવી કેટેગરી ઉમેરો',
+                style: TextStyle(
+                  fontFamily: 'NotoSansGujarati',
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: emojiCtrl,
+                decoration: InputDecoration(
+                  labelText: 'ઈમોજી',
+                  hintText: 'જેમ કે 💼 / 🍔 / 🚗',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: nameCtrl,
+                decoration: InputDecoration(
+                  labelText: 'કેટેગરી નામ',
+                  hintText: 'જેમ કે પગાર, પેટ્રોલ, દવા',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    final name = nameCtrl.text.trim();
+                    final emoji = emojiCtrl.text.trim().isEmpty
+                        ? '📁'
+                        : emojiCtrl.text.trim();
+
+                    if (name.isEmpty) return;
+
+                    final type =
+                        _type == TransactionType.income ? 'income' : 'expense';
+
+                    await context.read<CategoryProvider>().addCategory(
+                          name: name,
+                          emoji: emoji,
+                          type: type,
+                        );
+
+                    if (!mounted) return;
+
+                    await context.read<CategoryProvider>().loadCategories();
+
+                    final updatedCategories = _categories;
+                    try {
+                      _selectedCategory = updatedCategories.lastWhere(
+                        (c) =>
+                            c.name == name &&
+                            c.emoji == emoji &&
+                            c.type == type,
+                      );
+                    } catch (_) {}
+
+                    if (mounted) {
+                      setState(() {});
+                      Navigator.pop(sheetContext);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: const Text(
+                    'ઉમેરો',
+                    style: TextStyle(
+                      fontFamily: 'NotoSansGujarati',
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -169,32 +388,29 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
     final cur = context.read<SettingsProvider>().currency;
     final accounts = context.read<AccountProvider>().activeAccounts;
     final isIncome = _type == TransactionType.income;
+    final accent = isIncome ? AppColors.income : AppColors.expense;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEdit ? 'નોંધ સુધારો' : 'નવી નોંધ',
-            style: const TextStyle(
-                fontFamily: 'NotoSansGujarati', fontWeight: FontWeight.w800)),
+        title: Text(
+          _isEdit ? 'નોંધ સુધારો' : 'નવી નોંધ',
+          style: const TextStyle(
+            fontFamily: 'NotoSansGujarati',
+            fontWeight: FontWeight.w800,
+          ),
+        ),
         actions: [
-          if (_saving)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppColors.primary)),
-            )
-          else
-            TextButton.icon(
-              onPressed: _save,
-              icon: const Icon(Icons.check, color: AppColors.primary),
-              label: const Text('સાચવો',
-                  style: TextStyle(
-                      color: AppColors.primary,
-                      fontFamily: 'NotoSansGujarati',
-                      fontWeight: FontWeight.w700)),
+          TextButton(
+            onPressed: _saving ? null : _save,
+            child: Text(
+              _saving ? 'સાચવી રહ્યા છીએ...' : 'સાચવો',
+              style: const TextStyle(
+                fontFamily: 'NotoSansGujarati',
+                fontWeight: FontWeight.w700,
+              ),
             ),
+          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: Form(
@@ -202,102 +418,195 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // ── Type Tabs ─────────────────────────
             Container(
               decoration: BoxDecoration(
                 color: Theme.of(context)
                     .colorScheme
                     .surfaceContainerHighest
-                    .withOpacity(0.3),
+                    .withOpacity(0.35),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: TabBar(
                 controller: _typeTab,
                 indicator: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: isIncome
-                        ? [AppColors.income, AppColors.income.withOpacity(0.7)]
-                        : [
-                            AppColors.expense,
-                            AppColors.expense.withOpacity(0.7)
-                          ],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
+                  color: accent,
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 indicatorSize: TabBarIndicatorSize.tab,
-                indicatorPadding: const EdgeInsets.all(4),
                 dividerColor: Colors.transparent,
+                labelColor: Colors.white,
+                unselectedLabelColor:
+                    Theme.of(context).colorScheme.onSurface.withOpacity(0.55),
                 labelStyle: const TextStyle(
                   fontFamily: 'NotoSansGujarati',
                   fontWeight: FontWeight.w700,
-                  fontSize: 15,
+                  fontSize: 14,
                 ),
-                labelColor: Colors.white,
-                unselectedLabelColor:
-                    Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
                 tabs: const [
-                  Tab(text: '📈  આવક'),
-                  Tab(text: '📉  ખર્ચ'),
+                  Tab(text: '📈 આવક'),
+                  Tab(text: '📉 ખર્ચ'),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-
-            // ── Amount (big input) ─────────────────
+            const SizedBox(height: 16),
             Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color:
-                    isIncome ? AppColors.incomeLight : AppColors.expenseLight,
-                borderRadius: BorderRadius.circular(16),
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color:
+                      Theme.of(context).colorScheme.outline.withOpacity(0.10),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(cur,
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        color: isIncome ? AppColors.income : AppColors.expense,
-                      )),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _amountCtrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-                      ],
-                      style: TextStyle(
-                        fontSize: 36,
-                        fontWeight: FontWeight.w800,
-                        color: isIncome ? AppColors.income : AppColors.expense,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: accent.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          cur,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: accent,
+                            height: 1,
+                          ),
+                        ),
                       ),
-                      decoration: const InputDecoration(
-                        hintText: '0.00',
-                        border: InputBorder.none,
-                        isDense: true,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isIncome ? 'આવકની રકમ' : 'ખર્ચની રકમ',
+                              style: TextStyle(
+                                fontFamily: 'NotoSansGujarati',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: Theme.of(context).colorScheme.onSurface,
+                                height: 1.1,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              isIncome ? 'કેટલી આવક થઈ?' : 'કેટલો ખર્ચ થયો?',
+                              style: TextStyle(
+                                fontFamily: 'NotoSansGujarati',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withOpacity(0.55),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) {
-                          return 'રકમ લખો';
-                        }
-                        final n = double.tryParse(v);
-                        if (n == null || n <= 0) {
-                          return 'સાચી રકમ લખો';
-                        }
-                        return null;
-                      },
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Container(
+                      height: 78,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: accent.withOpacity(0.10),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.02),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: TextFormField(
+                        controller: _amountCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(
+                            RegExp(r'^\d*\.?\d{0,2}$'),
+                          ),
+                        ],
+                        textAlign: TextAlign.left,
+                        textAlignVertical: TextAlignVertical.center,
+                        cursorColor: accent,
+                        style: TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
+                          height: 1.15,
+                          letterSpacing: -1.0,
+                          color: accent,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: '0.00',
+                          hintStyle: TextStyle(
+                            fontSize: 34,
+                            fontWeight: FontWeight.w800,
+                            height: 1.15,
+                            letterSpacing: -1.0,
+                            color: accent.withOpacity(0.20),
+                          ),
+                          border: InputBorder.none,
+                          isCollapsed: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 22,
+                          ),
+                          counterText: '',
+                        ),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'રકમ લખો';
+                          }
+                          final n = double.tryParse(v);
+                          if (n == null || n <= 0) return 'સાચી રકમ લખો';
+                          return null;
+                        },
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 16),
-
-            // ── Title ──────────────────────────────
-            _buildField(
+            _fieldCard(
               child: TextFormField(
                 controller: _titleCtrl,
                 decoration: _inputDec(
@@ -305,106 +614,145 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                   hint: 'દા.ત. કિરાણા, ઑફિસ ખર્ચ...',
                   icon: Icons.edit_rounded,
                 ),
-                validator: (v) => v!.trim().isEmpty ? 'શીર્ષક લખો' : null,
+                validator: (v) =>
+                    v == null || v.trim().isEmpty ? 'શીર્ષક લખો' : null,
               ),
             ),
             const SizedBox(height: 12),
-
-            // ── Account picker ─────────────────────
-            _buildField(
+            _fieldCard(
               child: DropdownButtonFormField<String>(
-                initialValue: _accountId,
+                value: _accountId,
                 decoration: _inputDec(
                   label: 'ખાતું *',
                   icon: Icons.account_balance_wallet_rounded,
                 ),
                 items: accounts
-                    .map((a) => DropdownMenuItem(
-                          value: a.id,
-                          child: Text('${a.icon} ${a.name}',
-                              style: const TextStyle(
-                                  fontFamily: 'NotoSansGujarati')),
-                        ))
+                    .map(
+                      (a) => DropdownMenuItem(
+                        value: a.id,
+                        child: Text(
+                          '${a.icon} ${a.name}',
+                          style:
+                              const TextStyle(fontFamily: 'NotoSansGujarati'),
+                        ),
+                      ),
+                    )
                     .toList(),
                 onChanged: (v) => setState(() => _accountId = v),
                 validator: (v) => v == null ? 'ખાતું પસંદ કરો' : null,
               ),
             ),
             const SizedBox(height: 12),
-
-            // ── Category Grid ──────────────────────
-            const Text('Category *',
-                style: TextStyle(
-                  fontFamily: 'NotoSansGujarati',
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                )),
+            const Text(
+              'કેટેગરી *',
+              style: TextStyle(
+                fontFamily: 'NotoSansGujarati',
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: _categories.map((c) {
-                final sel = _category == c;
-                return GestureDetector(
-                  onTap: () => setState(() => _category = c),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: sel
-                          ? (isIncome
-                              ? AppColors.incomeLight
-                              : AppColors.expenseLight)
-                          : Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest
-                              .withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: sel
-                            ? (isIncome ? AppColors.income : AppColors.expense)
-                            : Colors.transparent,
-                        width: 1.5,
+              children: [
+                ..._categories.map((c) {
+                  final selected = _selectedCategory?.id == c.id;
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedCategory = c;
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
-                    ),
-                    child: Text('${c.icon} ${c.label}',
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? accent.withOpacity(0.10)
+                            : Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest
+                                .withOpacity(0.32),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: selected ? accent : Colors.transparent,
+                          width: 1.4,
+                        ),
+                      ),
+                      child: Text(
+                        '${c.emoji} ${c.name}',
                         style: TextStyle(
                           fontSize: 12,
                           fontFamily: 'NotoSansGujarati',
-                          fontWeight: sel ? FontWeight.w700 : FontWeight.normal,
-                          color: sel
-                              ? (isIncome
-                                  ? AppColors.income
-                                  : AppColors.expense)
-                              : null,
-                        )),
+                          fontWeight:
+                              selected ? FontWeight.w700 : FontWeight.normal,
+                          color: selected ? accent : null,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                GestureDetector(
+                  onTap: _openNewCategorySheet,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withOpacity(0.32),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.transparent,
+                        width: 1.4,
+                      ),
+                    ),
+                    child: const Text(
+                      '+ નવી કેટેગરી',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'NotoSansGujarati',
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ),
-                );
-              }).toList(),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
-
-            // ── Date ───────────────────────────────
-            _buildField(
+            _fieldCard(
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: AppColors.primarySurface,
-                    borderRadius: BorderRadius.circular(8),
+                    color: accent.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.calendar_today,
-                      color: AppColors.primary, size: 18),
+                  child: Icon(
+                    Icons.calendar_today,
+                    color: accent,
+                    size: 18,
+                  ),
                 ),
-                title: const Text('તારીખ',
-                    style: TextStyle(
-                        fontFamily: 'NotoSansGujarati',
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13)),
+                title: const Text(
+                  'તારીખ',
+                  style: TextStyle(
+                    fontFamily: 'NotoSansGujarati',
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
                 subtitle: Text(
-                  DateFormat('dd MMMM yyyy, EEEE').format(_date),
+                  DateFormat('dd MMM yyyy, EEEE').format(_date),
                   style: const TextStyle(fontSize: 12),
                 ),
                 trailing: const Icon(Icons.chevron_right),
@@ -412,9 +760,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
               ),
             ),
             const SizedBox(height: 12),
-
-            // ── Note ───────────────────────────────
-            _buildField(
+            _fieldCard(
               child: TextFormField(
                 controller: _noteCtrl,
                 maxLines: 2,
@@ -426,17 +772,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
               ),
             ),
             const SizedBox(height: 28),
-
-            // ── Save Button ────────────────────────
             ElevatedButton.icon(
               onPressed: _saving ? null : _save,
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    isIncome ? AppColors.income : AppColors.expense,
+                backgroundColor: accent,
                 foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 54),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 textStyle: const TextStyle(
                   fontFamily: 'NotoSansGujarati',
@@ -449,7 +792,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
                   : const Icon(Icons.save_rounded),
               label: Text(_isEdit ? 'સુધારો' : 'સાચવો'),
             ),
@@ -459,38 +805,4 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
       ),
     );
   }
-
-  Widget _buildField({required Widget child}) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.12),
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: child,
-        ),
-      );
-
-  InputDecoration _inputDec({
-    required String label,
-    String? hint,
-    IconData? icon,
-  }) =>
-      InputDecoration(
-        labelText: label,
-        labelStyle:
-            const TextStyle(fontFamily: 'NotoSansGujarati', fontSize: 13),
-        hintText: hint,
-        hintStyle:
-            const TextStyle(fontFamily: 'NotoSansGujarati', fontSize: 12),
-        prefixIcon: icon != null
-            ? Icon(icon, color: AppColors.primary, size: 18)
-            : null,
-        border: InputBorder.none,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      );
 }

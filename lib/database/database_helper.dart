@@ -42,15 +42,24 @@ class DatabaseHelper {
         } catch (_) {}
       }
     }
+
+    if (oldVersion < 3) {
+      try {
+        await db.execute(
+          'ALTER TABLE ${DbConstants.tTransactions} '
+          'ADD COLUMN ${DbConstants.cTxnCustomCategory} TEXT',
+        );
+      } catch (_) {}
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE ${DbConstants.tAccounts} (
-        ${DbConstants.cId}          TEXT PRIMARY KEY,
-        ${DbConstants.cUserId}      TEXT NOT NULL,
-        ${DbConstants.cAccName}     TEXT NOT NULL,
-        ${DbConstants.cAccType}     TEXT NOT NULL,
+        ${DbConstants.cId}           TEXT PRIMARY KEY,
+        ${DbConstants.cUserId}       TEXT NOT NULL,
+        ${DbConstants.cAccName}      TEXT NOT NULL,
+        ${DbConstants.cAccType}      TEXT NOT NULL,
         ${DbConstants.cAccBalance}   REAL DEFAULT 0,
         ${DbConstants.cAccColor}     TEXT,
         ${DbConstants.cAccIcon}      TEXT,
@@ -62,16 +71,17 @@ class DatabaseHelper {
 
     await db.execute('''
       CREATE TABLE ${DbConstants.tTransactions} (
-        ${DbConstants.cId}          TEXT PRIMARY KEY,
-        ${DbConstants.cUserId}      TEXT NOT NULL,
-        ${DbConstants.cTxnTitle}    TEXT NOT NULL,
-        ${DbConstants.cTxnAmount}    REAL NOT NULL,
-        ${DbConstants.cTxnType}     TEXT NOT NULL,
-        ${DbConstants.cTxnCategory}  TEXT NOT NULL,
-        ${DbConstants.cTxnAccId}    TEXT NOT NULL,
-        ${DbConstants.cTxnDate}     TEXT NOT NULL,
-        ${DbConstants.cTxnNote}     TEXT,
-        ${DbConstants.cCreatedAt}   TEXT NOT NULL,
+        ${DbConstants.cId}                 TEXT PRIMARY KEY,
+        ${DbConstants.cUserId}             TEXT NOT NULL,
+        ${DbConstants.cTxnTitle}           TEXT NOT NULL,
+        ${DbConstants.cTxnAmount}          REAL NOT NULL,
+        ${DbConstants.cTxnType}            TEXT NOT NULL,
+        ${DbConstants.cTxnCategory}        TEXT NOT NULL,
+        ${DbConstants.cTxnCustomCategory}  TEXT,
+        ${DbConstants.cTxnAccId}           TEXT NOT NULL,
+        ${DbConstants.cTxnDate}            TEXT NOT NULL,
+        ${DbConstants.cTxnNote}            TEXT,
+        ${DbConstants.cCreatedAt}          TEXT NOT NULL,
         FOREIGN KEY (${DbConstants.cTxnAccId})
           REFERENCES ${DbConstants.tAccounts}(${DbConstants.cId})
       )
@@ -144,40 +154,40 @@ class DatabaseHelper {
 
     final accounts = [
       {
-        'id': 'acc_cash',
-        'user_id': 'system',
-        'name': 'રોકડ',
-        'type': 'cash',
-        'balance': 0.0,
-        'color': '#01696F',
-        'icon': '💵',
-        'is_active': 1,
-        'created_at': now,
-        'updated_at': now
+        DbConstants.cId: 'acc_cash',
+        DbConstants.cUserId: 'system',
+        DbConstants.cAccName: 'રોકડ',
+        DbConstants.cAccType: 'cash',
+        DbConstants.cAccBalance: 0.0,
+        DbConstants.cAccColor: '#01696F',
+        DbConstants.cAccIcon: '💵',
+        DbConstants.cAccIsActive: 1,
+        DbConstants.cCreatedAt: now,
+        DbConstants.cUpdatedAt: now,
       },
       {
-        'id': 'acc_bank',
-        'user_id': 'system',
-        'name': 'બૅન્ક',
-        'type': 'bank',
-        'balance': 0.0,
-        'color': '#006494',
-        'icon': '🏦',
-        'is_active': 1,
-        'created_at': now,
-        'updated_at': now
+        DbConstants.cId: 'acc_bank',
+        DbConstants.cUserId: 'system',
+        DbConstants.cAccName: 'બૅન્ક',
+        DbConstants.cAccType: 'bank',
+        DbConstants.cAccBalance: 0.0,
+        DbConstants.cAccColor: '#006494',
+        DbConstants.cAccIcon: '🏦',
+        DbConstants.cAccIsActive: 1,
+        DbConstants.cCreatedAt: now,
+        DbConstants.cUpdatedAt: now,
       },
       {
-        'id': 'acc_upi',
-        'user_id': 'system',
-        'name': 'UPI / વૉલેટ',
-        'type': 'upi',
-        'balance': 0.0,
-        'color': '#E07B39',
-        'icon': '📲',
-        'is_active': 1,
-        'created_at': now,
-        'updated_at': now
+        DbConstants.cId: 'acc_upi',
+        DbConstants.cUserId: 'system',
+        DbConstants.cAccName: 'UPI / વૉલેટ',
+        DbConstants.cAccType: 'upi',
+        DbConstants.cAccBalance: 0.0,
+        DbConstants.cAccColor: '#E07B39',
+        DbConstants.cAccIcon: '📲',
+        DbConstants.cAccIsActive: 1,
+        DbConstants.cCreatedAt: now,
+        DbConstants.cUpdatedAt: now,
       },
     ];
 
@@ -186,19 +196,25 @@ class DatabaseHelper {
     }
 
     final settings = [
-      {DbConstants.cSetKey: DbConstants.kLanguage, DbConstants.cSetValue: 'gu'},
+      {
+        DbConstants.cSetKey: DbConstants.kLanguage,
+        DbConstants.cSetValue: 'gu',
+      },
       {
         DbConstants.cSetKey: DbConstants.kTheme,
-        DbConstants.cSetValue: 'system'
+        DbConstants.cSetValue: 'system',
       },
       {
         DbConstants.cSetKey: DbConstants.kPinEnabled,
-        DbConstants.cSetValue: 'false'
+        DbConstants.cSetValue: 'false',
       },
-      {DbConstants.cSetKey: DbConstants.kCurrency, DbConstants.cSetValue: '₹'},
+      {
+        DbConstants.cSetKey: DbConstants.kCurrency,
+        DbConstants.cSetValue: '₹',
+      },
       {
         DbConstants.cSetKey: DbConstants.kOnboarded,
-        DbConstants.cSetValue: 'false'
+        DbConstants.cSetValue: 'false',
       },
     ];
 
@@ -209,38 +225,64 @@ class DatabaseHelper {
 
   Future<int> insert(String table, Map<String, dynamic> data) async {
     final db = await database;
-    return db.insert(table, data, conflictAlgorithm: ConflictAlgorithm.replace);
+    return db.insert(
+      table,
+      data,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
-  Future<List<Map<String, dynamic>>> getAll(String table,
-      {String? where, List<dynamic>? whereArgs, String? orderBy}) async {
+  Future<List<Map<String, dynamic>>> getAll(
+    String table, {
+    String? where,
+    List<dynamic>? whereArgs,
+    String? orderBy,
+  }) async {
     final db = await database;
-    return db.query(table,
-        where: where, whereArgs: whereArgs, orderBy: orderBy);
+    return db.query(
+      table,
+      where: where,
+      whereArgs: whereArgs,
+      orderBy: orderBy,
+    );
   }
 
   Future<Map<String, dynamic>?> getById(String table, String id) async {
     final db = await database;
-    final result =
-        await db.query(table, where: '${DbConstants.cId} = ?', whereArgs: [id]);
+    final result = await db.query(
+      table,
+      where: '${DbConstants.cId} = ?',
+      whereArgs: [id],
+    );
     return result.isNotEmpty ? result.first : null;
   }
 
   Future<int> update(String table, Map<String, dynamic> data, String id) async {
     final db = await database;
-    return db
-        .update(table, data, where: '${DbConstants.cId} = ?', whereArgs: [id]);
+    return db.update(
+      table,
+      data,
+      where: '${DbConstants.cId} = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<int> delete(String table, String id) async {
     final db = await database;
-    return db.delete(table, where: '${DbConstants.cId} = ?', whereArgs: [id]);
+    return db.delete(
+      table,
+      where: '${DbConstants.cId} = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<String?> getSetting(String key) async {
     final db = await database;
-    final result = await db.query(DbConstants.tSettings,
-        where: '${DbConstants.cSetKey} = ?', whereArgs: [key]);
+    final result = await db.query(
+      DbConstants.tSettings,
+      where: '${DbConstants.cSetKey} = ?',
+      whereArgs: [key],
+    );
     return result.isNotEmpty
         ? result.first[DbConstants.cSetValue] as String
         : null;
@@ -250,7 +292,10 @@ class DatabaseHelper {
     final db = await database;
     await db.insert(
       DbConstants.tSettings,
-      {DbConstants.cSetKey: key, DbConstants.cSetValue: value},
+      {
+        DbConstants.cSetKey: key,
+        DbConstants.cSetValue: value,
+      },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -282,23 +327,45 @@ class DatabaseHelper {
       }
 
       for (final acc in data['accounts'] as List) {
-        await txn.insert(DbConstants.tAccounts, Map<String, dynamic>.from(acc));
+        await txn.insert(
+          DbConstants.tAccounts,
+          Map<String, dynamic>.from(acc),
+        );
       }
+
       for (final txnData in data['transactions'] as List) {
         await txn.insert(
-            DbConstants.tTransactions, Map<String, dynamic>.from(txnData));
+          DbConstants.tTransactions,
+          Map<String, dynamic>.from(txnData),
+        );
       }
+
       for (final p in data['persons'] as List) {
-        await txn.insert(DbConstants.tPersons, Map<String, dynamic>.from(p));
+        await txn.insert(
+          DbConstants.tPersons,
+          Map<String, dynamic>.from(p),
+        );
       }
+
       for (final loan in data['loans'] as List) {
-        await txn.insert(DbConstants.tLoans, Map<String, dynamic>.from(loan));
+        await txn.insert(
+          DbConstants.tLoans,
+          Map<String, dynamic>.from(loan),
+        );
       }
+
       for (final pay in data['payments'] as List) {
-        await txn.insert(DbConstants.tPayments, Map<String, dynamic>.from(pay));
+        await txn.insert(
+          DbConstants.tPayments,
+          Map<String, dynamic>.from(pay),
+        );
       }
+
       for (final s in data['settings'] as List) {
-        await txn.insert(DbConstants.tSettings, Map<String, dynamic>.from(s));
+        await txn.insert(
+          DbConstants.tSettings,
+          Map<String, dynamic>.from(s),
+        );
       }
     });
   }

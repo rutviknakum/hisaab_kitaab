@@ -2,12 +2,13 @@ class DbConstants {
   DbConstants._();
 
   static const String dbName = 'hisaab_kitaab.db';
-  static const int dbVersion = 2;
+  static const int dbVersion = 3;
 
   // ── Table Names ───────────────────────────────
   static const String tAccounts = 'accounts';
   static const String tTransactions = 'transactions';
   static const String tCategories = 'categories';
+  static const String tCustomCategories = 'custom_categories';
   static const String tPersons = 'ledger_persons';
   static const String tLoans = 'loans';
   static const String tPayments = 'loan_payments';
@@ -32,9 +33,14 @@ class DbConstants {
   static const String cTxnAmount = 'amount';
   static const String cTxnType = 'type';
   static const String cTxnCategory = 'category';
+  static const String cTxnCustomCategory = 'custom_category';
   static const String cTxnAccId = 'account_id';
   static const String cTxnDate = 'date';
   static const String cTxnNote = 'note';
+
+  // ── Custom Categories ─────────────────────────
+  static const String cCatName = 'name';
+  static const String cCatType = 'type';
 
   // ── Ledger Persons ────────────────────────────
   static const String cPerName = 'name';

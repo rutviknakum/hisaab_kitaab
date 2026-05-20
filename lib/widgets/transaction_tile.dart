@@ -81,8 +81,6 @@ class TransactionTile extends StatelessWidget {
             horizontal: 14,
             vertical: 4,
           ),
-
-          // ── Leading: Category Icon ────────────
           leading: Container(
             width: 44,
             height: 44,
@@ -92,13 +90,11 @@ class TransactionTile extends StatelessWidget {
             ),
             child: Center(
               child: Text(
-                transaction.category.icon,
+                transaction.categoryEmoji,
                 style: const TextStyle(fontSize: 20),
               ),
             ),
           ),
-
-          // ── Title ─────────────────────────────
           title: Text(
             transaction.title,
             style: const TextStyle(
@@ -108,23 +104,23 @@ class TransactionTile extends StatelessWidget {
             ),
             overflow: TextOverflow.ellipsis,
           ),
-
-          // ── Subtitle ──────────────────────────
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Category + Account
                 Row(
                   children: [
-                    Text(
-                      transaction.category.label,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontFamily: 'NotoSansGujarati',
-                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                    Expanded(
+                      child: Text(
+                        transaction.categoryName,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'NotoSansGujarati',
+                          color: colorScheme.onSurface.withValues(alpha: 0.5),
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     if (account != null) ...[
@@ -148,8 +144,6 @@ class TransactionTile extends StatelessWidget {
                     ],
                   ],
                 ),
-
-                // Date
                 if (showDate) ...[
                   const SizedBox(height: 2),
                   Text(
@@ -160,8 +154,6 @@ class TransactionTile extends StatelessWidget {
                     ),
                   ),
                 ],
-
-                // Note
                 if (transaction.note != null &&
                     transaction.note!.isNotEmpty) ...[
                   const SizedBox(height: 2),
@@ -176,13 +168,10 @@ class TransactionTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
-
                 const SizedBox(height: 2),
               ],
             ),
           ),
-
-          // ── Trailing: Amount + Badge ──────────
           trailing: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -224,9 +213,6 @@ class TransactionTile extends StatelessWidget {
     );
   }
 
-  // ─────────────────────────────────────────────
-  //  Edit Transaction
-  // ─────────────────────────────────────────────
   void _edit(BuildContext context) {
     Navigator.push(
       context,
@@ -238,9 +224,6 @@ class TransactionTile extends StatelessWidget {
     );
   }
 
-  // ─────────────────────────────────────────────
-  //  Delete with confirmation
-  // ─────────────────────────────────────────────
   Future<void> _confirmDelete(BuildContext context) async {
     final txnP = context.read<TransactionProvider>();
     final accP = context.read<AccountProvider>();
@@ -261,10 +244,10 @@ class TransactionTile extends StatelessWidget {
         ),
         content: RichText(
           text: TextSpan(
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: 'NotoSansGujarati',
               fontSize: 14,
-              color: Colors.black87,
+              color: Theme.of(ctx).colorScheme.onSurface,
             ),
             children: [
               const TextSpan(text: '"'),
@@ -311,9 +294,6 @@ class TransactionTile extends StatelessWidget {
     );
 
     if (confirm == true && context.mounted) {
-      // Balance reverse:
-      // expense delete → balance add back (isReverse = true)
-      // income delete  → balance subtract (isReverse = false)
       await accP.adjustBalance(
         transaction.accountId,
         transaction.amount,

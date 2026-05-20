@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hisaab_kitaab/screens/ledger/person_detail_screen.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_colors.dart';
 import '../../core/app_strings.dart';
+import '../../models/ledger_person_model.dart';
+import '../../models/loan_model.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/loan_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -60,6 +63,15 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     return shouldExit ?? false;
+  }
+
+  void _openPersonDetails(LedgerPersonModel person) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PersonDetailScreen(person: person),
+      ),
+    );
   }
 
   @override
@@ -349,12 +361,33 @@ class _HomeScreenState extends State<HomeScreen> {
     return SliverToBoxAdapter(
       child: Consumer<LoanProvider>(
         builder: (ctx, provider, _) {
-          final toReceive = provider.totalToReceive;
-          final toPay = provider.totalToPay;
-          if (toReceive == 0 && toPay == 0) {
+          final cur = ctx.read<SettingsProvider>().currency;
+
+          final receiveMap = <String, double>{};
+          final payMap = <String, double>{};
+
+          for (final loan in provider.loans) {
+            if (loan.status != LoanStatus.active) continue;
+
+            final out = provider.outstandingAmount(loan.id);
+            if (out <= 0) continue;
+
+            if (loan.type == LoanType.gave) {
+              receiveMap[loan.personId] =
+                  (receiveMap[loan.personId] ?? 0) + out;
+            } else {
+              payMap[loan.personId] = (payMap[loan.personId] ?? 0) + out;
+            }
+          }
+
+          if (receiveMap.isEmpty && payMap.isEmpty) {
             return const SizedBox.shrink();
           }
-          final cur = ctx.read<SettingsProvider>().currency;
+
+          final receiveEntries = receiveMap.entries.toList()
+            ..sort((a, b) => b.value.compareTo(a.value));
+          final payEntries = payMap.entries.toList()
+            ..sort((a, b) => b.value.compareTo(a.value));
 
           return Padding(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
@@ -369,31 +402,69 @@ class _HomeScreenState extends State<HomeScreen> {
                       ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    if (toReceive > 0)
-                      Expanded(
-                        child: _LedgerSummaryCard(
-                          label: 'ઉઘરાણી (મળવાનું)',
-                          amount: '$cur${_fmt(toReceive)}',
+                if (receiveEntries.isNotEmpty) ...[
+                  const Text(
+                    'ઉઘરાણી',
+                    style: TextStyle(
+                      fontFamily: 'NotoSansGujarati',
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.income,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...receiveEntries.map((e) {
+                    final person = provider.getPersonById(e.key);
+                    if (person == null) return const SizedBox.shrink();
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () => _openPersonDetails(person),
+                        child: _PersonLoanSummaryCard(
+                          name: person.name,
+                          amount: '$cur${_fmt(e.value)}',
+                          subtitle: 'મળવાનું',
                           color: AppColors.income,
                           bgColor: AppColors.incomeLight,
                           icon: '💸',
                         ),
                       ),
-                    if (toReceive > 0 && toPay > 0) const SizedBox(width: 10),
-                    if (toPay > 0)
-                      Expanded(
-                        child: _LedgerSummaryCard(
-                          label: 'ઉધાર (આપવાનું)',
-                          amount: '$cur${_fmt(toPay)}',
+                    );
+                  }),
+                  const SizedBox(height: 14),
+                ],
+                if (payEntries.isNotEmpty) ...[
+                  const Text(
+                    'ઉધાર',
+                    style: TextStyle(
+                      fontFamily: 'NotoSansGujarati',
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.expense,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...payEntries.map((e) {
+                    final person = provider.getPersonById(e.key);
+                    if (person == null) return const SizedBox.shrink();
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () => _openPersonDetails(person),
+                        child: _PersonLoanSummaryCard(
+                          name: person.name,
+                          amount: '$cur${_fmt(e.value)}',
+                          subtitle: 'આપવાનું',
                           color: AppColors.expense,
                           bgColor: AppColors.expenseLight,
                           icon: '🤲',
                         ),
                       ),
-                  ],
-                ),
+                    );
+                  }),
+                ],
               ],
             ),
           );
@@ -580,6 +651,80 @@ class _HomeScreenState extends State<HomeScreen> {
       NumberFormat('#,##,##0.00', 'en_IN').format(amount);
 }
 
+class _PersonLoanSummaryCard extends StatelessWidget {
+  final String name;
+  final String amount;
+  final String subtitle;
+  final Color color;
+  final Color bgColor;
+  final String icon;
+
+  const _PersonLoanSummaryCard({
+    required this.name,
+    required this.amount,
+    required this.subtitle,
+    required this.color,
+    required this.bgColor,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: color.withValues(alpha: 0.2),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 22)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontFamily: 'NotoSansGujarati',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontFamily: 'NotoSansGujarati',
+                    fontSize: 11,
+                    color: color.withValues(alpha: 0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            amount,
+            style: TextStyle(
+              color: color,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Icon(Icons.chevron_right_rounded, color: color),
+        ],
+      ),
+    );
+  }
+}
+
 class _SummaryPill extends StatelessWidget {
   final String label;
   final String amount;
@@ -639,65 +784,6 @@ class _SummaryPill extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                   overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LedgerSummaryCard extends StatelessWidget {
-  final String label;
-  final String amount;
-  final Color color;
-  final Color bgColor;
-  final String icon;
-
-  const _LedgerSummaryCard({
-    required this.label,
-    required this.amount,
-    required this.color,
-    required this.bgColor,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
-      ),
-      child: Row(
-        children: [
-          Text(icon, style: const TextStyle(fontSize: 24)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: color.withValues(alpha: 0.8),
-                    fontSize: 10,
-                    fontFamily: 'NotoSansGujarati',
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  amount,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
                 ),
               ],
             ),

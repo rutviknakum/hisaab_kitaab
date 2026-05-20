@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hisaab_kitaab/core/app_colors.dart';
+import 'package:hisaab_kitaab/providers/settings_provider.dart';
+import 'package:hisaab_kitaab/screens/onboarding/onboarding_screen.dart';
+import 'package:provider/provider.dart';
 import '../auth/auth_wrapper.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -44,9 +47,22 @@ class _SplashScreenState extends State<SplashScreen>
 
     Timer(const Duration(seconds: 2), () {
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const AuthWrapper()),
-      );
+
+      final settings = context.read<SettingsProvider>();
+
+      if (!settings.onboarded) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const OnboardingScreen(),
+          ),
+        );
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const AuthWrapper(),
+          ),
+        );
+      }
     });
   }
 
@@ -96,8 +112,6 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
                 const SizedBox(height: 20),
-
-                // ── Title ──
                 const Text(
                   'હિસાબ કિતાબ',
                   style: TextStyle(

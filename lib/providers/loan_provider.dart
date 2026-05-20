@@ -18,7 +18,6 @@ class LoanProvider with ChangeNotifier {
 
   Future<void> loadAll() async {
     final userId = _currentUserId;
-
     if (userId == null) {
       _persons = [];
       _loans = [];
@@ -79,8 +78,7 @@ class LoanProvider with ChangeNotifier {
     final personLoans = loansOfPerson(personId);
     double total = 0;
     for (final loan in personLoans) {
-      final paid = totalPaid(loan.id);
-      final outstanding = loan.totalAmount - paid;
+      final outstanding = outstandingAmount(loan.id);
       if (outstanding <= 0) continue;
       total += loan.type == LoanType.gave ? outstanding : -outstanding;
     }
@@ -95,11 +93,39 @@ class LoanProvider with ChangeNotifier {
       .where((p) => p.loanId == loanId)
       .fold(0, (s, p) => s + p.amount);
 
+  double _reducingOutstandingAmount(LoanModel loan) {
+    final schedule = loan.reducingSchedule();
+    final paidTotal = totalPaid(loan.id);
+
+    double paidLeft = paidTotal;
+    double remaining = 0;
+
+    for (final row in schedule) {
+      final installment = row['amount'] as double;
+
+      if (paidLeft >= installment) {
+        paidLeft -= installment;
+      } else {
+        remaining += (installment - paidLeft);
+        paidLeft = 0;
+      }
+    }
+
+    return remaining < 0 ? 0 : remaining;
+  }
+
   double outstandingAmount(String loanId) {
     final loan = _loans.firstWhere(
       (l) => l.id == loanId,
       orElse: () => throw Exception('Loan not found'),
     );
+
+    if (loan.interestType == InterestType.reducing &&
+        loan.paymentStyle == PaymentStyle.fixed &&
+        loan.totalMonths > 0) {
+      return _reducingOutstandingAmount(loan);
+    }
+
     final paid = totalPaid(loanId);
     final outstanding = loan.totalAmount - paid;
     return outstanding < 0 ? 0 : outstanding;
@@ -110,8 +136,26 @@ class LoanProvider with ChangeNotifier {
       return [];
     }
 
-    final schedule = <Map<String, dynamic>>[];
     final payments = paymentsOfLoan(loan.id);
+
+    if (loan.interestType == InterestType.reducing) {
+      final base = loan.reducingSchedule();
+
+      return base.map((row) {
+        final dueDate = row['due_date'] as DateTime;
+        final paid = payments.any(
+          (p) => p.paymentDate.difference(dueDate).inDays.abs() <= 5,
+        );
+
+        return {
+          ...row,
+          'is_paid': paid,
+          'is_overdue': !paid && dueDate.isBefore(DateTime.now()),
+        };
+      }).toList();
+    }
+
+    final schedule = <Map<String, dynamic>>[];
 
     for (var i = 0; i < loan.totalMonths; i++) {
       final dueDate = DateTime(
@@ -120,8 +164,9 @@ class LoanProvider with ChangeNotifier {
         loan.emiDay,
       );
 
-      final paid = payments
-          .any((p) => p.paymentDate.difference(dueDate).inDays.abs() <= 5);
+      final paid = payments.any(
+        (p) => p.paymentDate.difference(dueDate).inDays.abs() <= 5,
+      );
 
       schedule.add({
         'month': i + 1,
@@ -131,6 +176,7 @@ class LoanProvider with ChangeNotifier {
         'is_overdue': !paid && dueDate.isBefore(DateTime.now()),
       });
     }
+
     return schedule;
   }
 
@@ -166,6 +212,12 @@ class LoanProvider with ChangeNotifier {
   Future<void> deletePerson(String id) async {
     final userId = _currentUserId;
     if (userId == null) throw Exception('User not logged in');
+
+    final activeLoans = activeLoansOfPerson(id);
+    if (activeLoans.isNotEmpty) {
+      throw Exception(
+          'Active loan હોય ત્યાં સુધી વ્યક્તિ delete કરી શકાતી નથી.');
+    }
 
     final personLoans = loansOfPerson(id);
     for (final loan in personLoans) {
@@ -222,6 +274,7 @@ class LoanProvider with ChangeNotifier {
   Future<void> closeLoan(String loanId) async {
     final idx = _loans.indexWhere((l) => l.id == loanId);
     if (idx == -1) return;
+
     final updated = _loans[idx].copyWith(status: LoanStatus.closed);
     await updateLoan(updated);
   }
@@ -331,10 +384,13 @@ class LoanProvider with ChangeNotifier {
 
   List<Map<String, dynamic>> get overdueEmis {
     final overdue = <Map<String, dynamic>>[];
-    for (final loan in _loans.where((l) =>
-        l.paymentStyle == PaymentStyle.fixed &&
-        l.status == LoanStatus.active)) {
+
+    for (final loan in _loans.where(
+      (l) =>
+          l.paymentStyle == PaymentStyle.fixed && l.status == LoanStatus.active,
+    )) {
       final schedule = emiSchedule(loan);
+
       for (final emi in schedule) {
         if (emi['is_overdue'] == true) {
           final person = getPersonById(loan.personId);
@@ -347,6 +403,7 @@ class LoanProvider with ChangeNotifier {
         }
       }
     }
+
     return overdue;
   }
 

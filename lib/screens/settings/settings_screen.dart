@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hisaab_kitaab/screens/categories/manage_categories_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_colors.dart';
@@ -6,6 +7,7 @@ import '../../providers/settings_provider.dart';
 import '../auth/pin_lock_screen.dart';
 import '../accounts/add_account_screen.dart';
 import '../accounts/accounts_list_screen.dart';
+import '../splash/splash_screen.dart';
 import '../../main.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -69,6 +71,21 @@ class SettingsScreen extends StatelessWidget {
                     ctx,
                     MaterialPageRoute(
                       builder: (_) => const AccountsListScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+              const _SectionHeader(title: 'કેટેગરી'),
+              _SettingsTile(
+                icon: Icons.category_rounded,
+                title: 'કેટેગરી મેનેજ કરો',
+                subtitle: 'નવી કેટેગરી ઉમેરો અને જૂની કાઢો',
+                onTap: () {
+                  Navigator.push(
+                    ctx,
+                    MaterialPageRoute(
+                      builder: (_) => const ManageCategoriesScreen(),
                     ),
                   );
                 },
@@ -515,15 +532,27 @@ class SettingsScreen extends StatelessWidget {
     );
 
     if (confirm == true) {
-      await supabase.auth.signOut();
+      try {
+        await supabase.auth.signOut();
 
-      if (context.mounted) {
+        if (!context.mounted) return;
+
+        navigatorKey.currentState?.pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => const SplashScreen(),
+          ),
+          (route) => false,
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'તમે સફળતાપૂર્વક લોગઆઉટ થયા',
-              style: TextStyle(fontFamily: 'NotoSansGujarati'),
+              'લોગઆઉટ થઈ શક્યું નહીં: ${e.toString()}',
+              style: const TextStyle(fontFamily: 'NotoSansGujarati'),
             ),
+            backgroundColor: AppColors.expense,
           ),
         );
       }

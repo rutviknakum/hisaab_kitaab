@@ -35,7 +35,6 @@ class _LedgerScreenState extends State<LedgerScreen>
 
   @override
   Widget build(BuildContext context) {
-    // ✅ BottomNav height: 56px + SafeArea bottom
     final bottomNavHeight = 56.0 + MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
@@ -123,8 +122,6 @@ class _LedgerScreenState extends State<LedgerScreen>
           );
         },
       ),
-
-      // ✅ FAB FIX: ElevatedButton.icon — Gujarati text properly show થશે
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: Padding(
         padding: EdgeInsets.only(bottom: bottomNavHeight + 8),
@@ -219,7 +216,6 @@ class _LedgerScreenState extends State<LedgerScreen>
   }
 }
 
-// ── Sum Item ───────────────────────────────────
 class _SumItem extends StatelessWidget {
   final String label;
   final String amount;
@@ -274,7 +270,6 @@ class _Divider extends StatelessWidget {
       );
 }
 
-// ── Person List ────────────────────────────────
 class _PersonList extends StatelessWidget {
   final String search;
   final LoanType? filterType;
@@ -311,7 +306,6 @@ class _PersonList extends StatelessWidget {
         }
 
         return ListView.builder(
-          // ✅ FAB + BottomNav બન્ને ઉપર content visible
           padding: EdgeInsets.fromLTRB(16, 8, 16, extraBottomPadding + 80),
           itemCount: persons.length,
           itemBuilder: (_, i) {
@@ -344,7 +338,8 @@ class _PersonList extends StatelessWidget {
     LedgerPersonModel person,
   ) async {
     final loans = loanP.loansOfPerson(person.id);
-    final hasActive = loans.any((l) => l.status == LoanStatus.active);
+    final activeLoans = loanP.activeLoansOfPerson(person.id);
+    final hasActive = activeLoans.isNotEmpty;
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -362,8 +357,10 @@ class _PersonList extends StatelessWidget {
         ),
         content: Text(
           hasActive
-              ? '⚠️ આ વ્યક્તિ ના ${loans.length} loan records પણ ભૂંસાઈ જશે!\n\nઆ ક્રિયા undo ન થઈ શકે.'
-              : 'આ વ્યક્તિ ની સંપૂર્ણ history ભૂંસાઈ જશે.\n\nઆ ક્રિયા undo ન થઈ શકે.',
+              ? 'આ વ્યક્તિ પાસે હજુ active loan છે.\n\nડિલીટ કરવાનો પ્રયાસ કરશો તો એપ તમને કારણ બતાવશે.'
+              : loans.isNotEmpty
+                  ? 'આ વ્યક્તિ ની closed loan history પણ ભૂંસાઈ જશે.\n\nઆ ક્રિયા undo ન થઈ શકે.'
+                  : 'આ વ્યક્તિ ની સંપૂર્ણ history ભૂંસાઈ જશે.\n\nઆ ક્રિયા undo ન થઈ શકે.',
           style: const TextStyle(
             fontFamily: 'NotoSansGujarati',
             height: 1.5,
@@ -400,17 +397,68 @@ class _PersonList extends StatelessWidget {
     );
 
     if (confirm == true && context.mounted) {
-      await loanP.deletePerson(person.id);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '${person.name} ડિલીટ થઈ ગઈ ✅',
-              style: const TextStyle(fontFamily: 'NotoSansGujarati'),
+      try {
+        await loanP.deletePerson(person.id);
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${person.name} ડિલીટ થઈ ગઈ ✅',
+                style: const TextStyle(fontFamily: 'NotoSansGujarati'),
+              ),
+              backgroundColor: AppColors.expense,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
             ),
-            backgroundColor: AppColors.expense,
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+          );
+        }
+      } catch (e) {
+        if (!context.mounted) return;
+
+        final message = e.toString().replaceFirst('Exception: ', '');
+
+        await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Text(
+              'ડિલીટ થઈ શક્યું નહીં',
+              style: TextStyle(
+                fontFamily: 'NotoSansGujarati',
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            content: Text(
+              message,
+              style: const TextStyle(
+                fontFamily: 'NotoSansGujarati',
+                height: 1.5,
+                fontSize: 13,
+              ),
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: const Text(
+                  'બરાબર',
+                  style: TextStyle(
+                    fontFamily: 'NotoSansGujarati',
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       }
@@ -453,7 +501,6 @@ class _PersonList extends StatelessWidget {
   }
 }
 
-// ── Person Card ────────────────────────────────
 class _PersonCard extends StatelessWidget {
   final LedgerPersonModel person;
   final double net;
@@ -498,7 +545,6 @@ class _PersonCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Avatar
             Container(
               width: 50,
               height: 50,
@@ -519,8 +565,6 @@ class _PersonCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-
-            // Name + Info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -570,8 +614,6 @@ class _PersonCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // Balance + Popup Menu
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [

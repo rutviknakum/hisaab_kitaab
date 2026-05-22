@@ -47,17 +47,13 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text(
-              'ના',
-              style: TextStyle(fontFamily: 'NotoSansGujarati'),
-            ),
+            child: const Text('ના',
+                style: TextStyle(fontFamily: 'NotoSansGujarati')),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text(
-              'હા',
-              style: TextStyle(fontFamily: 'NotoSansGujarati'),
-            ),
+            child: const Text('હા',
+                style: TextStyle(fontFamily: 'NotoSansGujarati')),
           ),
         ],
       ),
@@ -68,9 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openPersonDetails(LedgerPersonModel person) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => PersonDetailScreen(person: person),
-      ),
+      MaterialPageRoute(builder: (_) => PersonDetailScreen(person: person)),
     );
   }
 
@@ -81,37 +75,48 @@ class _HomeScreenState extends State<HomeScreen> {
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldExit = await _showExitDialog();
-        if (shouldExit) {
-          SystemNavigator.pop();
-        }
+        if (shouldExit) SystemNavigator.pop();
       },
       child: Scaffold(
-        body: RefreshIndicator(
-          color: AppColors.primary,
-          onRefresh: () async {
-            await Future.wait([
-              context.read<AccountProvider>().loadAccounts(),
-              context.read<TransactionProvider>().loadTransactions(),
-              context.read<LoanProvider>().loadAll(),
-            ]);
-          },
-          child: CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              _buildAppBar(context),
-              _buildBalanceCard(context),
-              _buildLedgerSummary(context),
-              _buildOverdueAlert(context),
-              _buildRecentTransactions(context),
-              const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
-            ],
-          ),
+        body: Column(
+          children: [
+            // ── Fixed: AppBar ──────────────────────────
+            _buildAppBarWidget(context),
+
+            // ── Fixed: Balance Card (scroll સાથે નહીં જાય) ──
+            _buildBalanceCardFixed(context),
+
+            // ── Scrollable content ─────────────────────
+            Expanded(
+              child: RefreshIndicator(
+                color: AppColors.primary,
+                onRefresh: () async {
+                  await Future.wait([
+                    context.read<AccountProvider>().loadAccounts(),
+                    context.read<TransactionProvider>().loadTransactions(),
+                    context.read<LoanProvider>().loadAll(),
+                  ]);
+                },
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    _buildLedgerSummary(context),
+                    _buildOverdueAlert(context),
+                    _buildRecentTransactions(context),
+                    const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  SliverAppBar _buildAppBar(BuildContext context) {
+  // ── AppBar Widget (Fixed) ────────────────────────────────────────────────
+
+  Widget _buildAppBarWidget(BuildContext context) {
     final now = DateTime.now();
     const weekdays = ['રવિ', 'સોમ', 'મંગળ', 'બુધ', 'ગુરુ', 'શુક્ર', 'શનિ'];
     const months = [
@@ -132,37 +137,40 @@ class _HomeScreenState extends State<HomeScreen> {
     final monthName = months[now.month - 1];
     final fullDate = '$dayName, ${now.day} $monthName ${now.year}';
 
-    return SliverAppBar(
-      floating: true,
-      snap: true,
-      elevation: 0,
-      backgroundColor: AppColors.primary,
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _greeting(),
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-              fontFamily: 'NotoSansGujarati',
-            ),
-          ),
-          const Text(
-            'હિસાબ કિતાબ',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              fontFamily: 'NotoSansGujarati',
-            ),
-          ),
-        ],
+    return Container(
+      color: AppColors.primary,
+      padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 8,
+        left: 16,
+        right: 12,
+        bottom: 12,
       ),
-      actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: 12),
-          child: Container(
+      child: Row(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _greeting(),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                  fontFamily: 'NotoSansGujarati',
+                ),
+              ),
+              const Text(
+                'હિસાબ કિતાબ',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  fontFamily: 'NotoSansGujarati',
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.15),
@@ -191,90 +199,107 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  SliverToBoxAdapter _buildBalanceCard(BuildContext context) {
-    return SliverToBoxAdapter(
-      child: Consumer2<TransactionProvider, AccountProvider>(
-        builder: (ctx, txnP, accP, _) {
-          final settings = ctx.read<SettingsProvider>();
-          final cur = settings.currency;
-          final now = DateTime.now();
-          final income = txnP.monthlyIncome(now.year, now.month);
-          final expense = txnP.monthlyExpense(now.year, now.month);
-          final balance = accP.totalBalance;
-          final isPositive = balance >= 0;
+  // ── Balance Card (Fixed, scroll સાથે ન જાય) ─────────────────────────────
 
-          return Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppColors.primary, AppColors.primaryDark],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(32),
-                bottomRight: Radius.circular(32),
-              ),
+  Widget _buildBalanceCardFixed(BuildContext context) {
+    return Consumer2<TransactionProvider, AccountProvider>(
+      builder: (ctx, txnP, accP, _) {
+        final cur = ctx.read<SettingsProvider>().currency;
+        final now = DateTime.now();
+        final income = txnP.monthlyIncome(now.year, now.month);
+        final expense = txnP.monthlyExpense(now.year, now.month);
+        final balance = accP.totalBalance;
+        final isPositive = balance >= 0;
+
+        return Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppColors.primary, AppColors.primaryDark],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-            child: Stack(
-              children: [
-                Positioned(
-                  right: -30,
-                  top: -20,
-                  child: Container(
-                    width: 150,
-                    height: 150,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.05),
-                    ),
+            borderRadius: BorderRadius.only(
+              bottomLeft: Radius.circular(32),
+              bottomRight: Radius.circular(32),
+            ),
+          ),
+          child: Stack(
+            children: [
+              // Decorative circles
+              Positioned(
+                right: -30,
+                top: -20,
+                child: Container(
+                  width: 150,
+                  height: 150,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.05),
                   ),
                 ),
-                Positioned(
-                  right: 40,
-                  bottom: -40,
-                  child: Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.04),
-                    ),
+              ),
+              Positioned(
+                right: 40,
+                bottom: -40,
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.04),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-                  child: Column(
-                    children: [
-                      Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.account_balance_wallet_rounded,
-                                color: Colors.white.withValues(alpha: 0.7),
-                                size: 14,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                AppStrings.get('total_balance'),
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 13,
-                                  fontFamily: 'NotoSansGujarati',
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ],
+              ),
+
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+                child: Column(
+                  children: [
+                    // ── કુલ બાકી રકમ label ──
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.account_balance_wallet_rounded,
+                          color: Colors.white.withValues(alpha: 0.7),
+                          size: 14,
+                        ),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'કુલ રકમ',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                            fontFamily: 'NotoSansGujarati',
+                            letterSpacing: 0.5,
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '$cur${_fmt(balance.abs())}',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    // ── Amount ──
+                    RichText(
+                      text: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: cur,
+                            style: TextStyle(
+                              color: isPositive
+                                  ? Colors.white70
+                                  : Colors.red.shade200,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w600,
+                              height: 1.6,
+                            ),
+                          ),
+                          TextSpan(
+                            text: _fmt(balance.abs()),
                             style: TextStyle(
                               color: isPositive
                                   ? Colors.white
@@ -285,77 +310,85 @@ class _HomeScreenState extends State<HomeScreen> {
                               height: 1,
                             ),
                           ),
-                          if (!isPositive)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: const Text(
-                                  '⚠️ ઋણ બાકી',
-                                  style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 11,
-                                    fontFamily: 'NotoSansGujarati',
-                                  ),
-                                ),
-                              ),
-                            ),
                         ],
                       ),
-                      const SizedBox(height: 20),
-                      Divider(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        thickness: 1,
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _SummaryPill(
-                              label: AppStrings.get('total_income'),
-                              amount: '$cur${_fmt(income)}',
-                              icon: Icons.arrow_upward_rounded,
-                              color: Colors.green.shade300,
-                              bgColor: Colors.green.withValues(alpha: 0.15),
+                    ),
+
+                    // ── ઋણ badge ──
+                    if (!isPositive)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            '⚠️ ઋણ બાકી',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
+                              fontFamily: 'NotoSansGujarati',
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _SummaryPill(
-                              label: AppStrings.get('total_expense'),
-                              amount: '$cur${_fmt(expense)}',
-                              icon: Icons.arrow_downward_rounded,
-                              color: Colors.red.shade300,
-                              bgColor: Colors.red.withValues(alpha: 0.15),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      Text(
-                        '${_currentMonthName(now.month)} ${now.year} નો સારાંશ',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.45),
-                          fontSize: 10,
-                          fontFamily: 'NotoSansGujarati',
-                          letterSpacing: 0.3,
                         ),
                       ),
-                    ],
-                  ),
+
+                    const SizedBox(height: 20),
+                    Divider(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      thickness: 1,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ── આવક / ખર્ચ pills ──
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _SummaryPill(
+                            label: 'કુલ આવક',
+                            amount: '$cur${_fmt(income)}',
+                            icon: Icons.arrow_upward_rounded,
+                            color: Colors.green.shade300,
+                            bgColor: Colors.green.withValues(alpha: 0.15),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _SummaryPill(
+                            label: 'કુલ ખર્ચ',
+                            amount: '$cur${_fmt(expense)}',
+                            icon: Icons.arrow_downward_rounded,
+                            color: Colors.red.shade300,
+                            bgColor: Colors.red.withValues(alpha: 0.15),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    Text(
+                      '${_currentMonthName(now.month)} ${now.year} નો સારાંશ',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.45),
+                        fontSize: 10,
+                        fontFamily: 'NotoSansGujarati',
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          );
-        },
-      ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
+
+  // ── Ledger Summary ───────────────────────────────────────────────────────
 
   SliverToBoxAdapter _buildLedgerSummary(BuildContext context) {
     return SliverToBoxAdapter(
@@ -368,7 +401,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
           for (final loan in provider.loans) {
             if (loan.status != LoanStatus.active) continue;
-
             final out = provider.outstandingAmount(loan.id);
             if (out <= 0) continue;
 
@@ -415,7 +447,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ...receiveEntries.map((e) {
                     final person = provider.getPersonById(e.key);
                     if (person == null) return const SizedBox.shrink();
-
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: InkWell(
@@ -447,7 +478,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ...payEntries.map((e) {
                     final person = provider.getPersonById(e.key);
                     if (person == null) return const SizedBox.shrink();
-
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: InkWell(
@@ -472,6 +502,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  // ── Overdue Alert ────────────────────────────────────────────────────────
 
   SliverToBoxAdapter _buildOverdueAlert(BuildContext context) {
     return SliverToBoxAdapter(
@@ -518,6 +550,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  // ── Recent Transactions ──────────────────────────────────────────────────
 
   SliverToBoxAdapter _buildRecentTransactions(BuildContext context) {
     return SliverToBoxAdapter(
@@ -575,6 +609,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ── Empty State ──────────────────────────────────────────────────────────
+
   Widget _buildEmptyState(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
@@ -622,6 +658,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
   String _greeting() {
     final h = DateTime.now().hour;
     if (h < 12) return 'સુ-પ્રભાત 🌅';
@@ -651,6 +689,8 @@ class _HomeScreenState extends State<HomeScreen> {
       NumberFormat('#,##,##0.00', 'en_IN').format(amount);
 }
 
+// ── Reusable Widgets ─────────────────────────────────────────────────────────
+
 class _PersonLoanSummaryCard extends StatelessWidget {
   final String name;
   final String amount;
@@ -675,10 +715,7 @@ class _PersonLoanSummaryCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: color.withValues(alpha: 0.2),
-          width: 1,
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
       ),
       child: Row(
         children: [
@@ -747,10 +784,7 @@ class _SummaryPill extends StatelessWidget {
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: color.withValues(alpha: 0.2),
-          width: 1,
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
       ),
       child: Row(
         children: [

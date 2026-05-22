@@ -1,7 +1,13 @@
 import 'package:uuid/uuid.dart';
 import '../database/db_constants.dart';
 
-enum AccountType { cash, bank, upi }
+enum AccountType {
+  cash,
+  bank,
+  upi,
+  check,
+  creditCard,
+}
 
 extension AccountTypeInfo on AccountType {
   String get label {
@@ -12,6 +18,10 @@ extension AccountTypeInfo on AccountType {
         return 'બૅન્ક';
       case AccountType.upi:
         return 'UPI / વૉલેટ';
+      case AccountType.check:
+        return 'ચેક';
+      case AccountType.creditCard:
+        return 'ક્રેડિટ કાર્ડ';
     }
   }
 
@@ -23,6 +33,10 @@ extension AccountTypeInfo on AccountType {
         return '🏦';
       case AccountType.upi:
         return '📲';
+      case AccountType.check:
+        return '🧾';
+      case AccountType.creditCard:
+        return '💳';
     }
   }
 }
@@ -63,19 +77,22 @@ class AccountModel {
     String? color,
     String? icon,
     bool? isActive,
-  }) =>
-      AccountModel(
-        id: id,
-        userId: userId ?? this.userId,
-        name: name ?? this.name,
-        type: type ?? this.type,
-        balance: balance ?? this.balance,
-        color: color ?? this.color,
-        icon: icon ?? this.icon,
-        isActive: isActive ?? this.isActive,
-        createdAt: createdAt,
-        updatedAt: DateTime.now(),
-      );
+  }) {
+    final newType = type ?? this.type;
+
+    return AccountModel(
+      id: id,
+      userId: userId ?? this.userId,
+      name: name ?? this.name,
+      type: newType,
+      balance: balance ?? this.balance,
+      color: color ?? this.color,
+      icon: icon ?? this.icon,
+      isActive: isActive ?? this.isActive,
+      createdAt: createdAt,
+      updatedAt: DateTime.now(),
+    );
+  }
 
   Map<String, dynamic> toMap() => {
         DbConstants.cId: id,
@@ -94,7 +111,7 @@ class AccountModel {
         id: map[DbConstants.cId],
         userId: map[DbConstants.cUserId] ?? '',
         name: map[DbConstants.cAccName],
-        type: AccountType.values.byName(map[DbConstants.cAccType]),
+        type: _parseAccountType(map[DbConstants.cAccType]),
         balance: (map[DbConstants.cAccBalance] as num).toDouble(),
         color: map[DbConstants.cAccColor] ?? '#01696F',
         icon: map[DbConstants.cAccIcon],
@@ -103,4 +120,14 @@ class AccountModel {
         createdAt: DateTime.parse(map[DbConstants.cCreatedAt]),
         updatedAt: DateTime.parse(map[DbConstants.cUpdatedAt]),
       );
+
+  static AccountType _parseAccountType(dynamic raw) {
+    final value = (raw ?? '').toString();
+
+    for (final type in AccountType.values) {
+      if (type.name == value) return type;
+    }
+
+    return AccountType.cash;
+  }
 }

@@ -42,6 +42,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     '🏦',
     '📲',
     '💳',
+    '🧾',
     '🏪',
     '🏠',
     '💰',
@@ -74,25 +75,31 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
 
-    final accP = context.read<AccountProvider>();
-    final account = AccountModel(
-      id: widget.existing?.id,
-      name: _nameCtrl.text.trim(),
-      type: _type,
-      balance: double.tryParse(_balCtrl.text) ?? 0,
-      color: _color,
-      icon: _icon,
-      userId: '',
-    );
+    try {
+      final accP = context.read<AccountProvider>();
+      final account = AccountModel(
+        id: widget.existing?.id,
+        name: _nameCtrl.text.trim(),
+        type: _type,
+        balance: double.tryParse(_balCtrl.text) ?? 0,
+        color: _color,
+        icon: _icon,
+        userId: '',
+      );
 
-    if (_isEdit) {
-      await accP.updateAccount(account);
-    } else {
-      await accP.addAccount(account);
+      if (_isEdit) {
+        await accP.updateAccount(account);
+      } else {
+        await accP.addAccount(account);
+      }
+
+      if (!mounted) return;
+      Navigator.pop(context);
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
-
-    setState(() => _saving = false);
-    if (mounted) Navigator.pop(context);
   }
 
   @override
@@ -101,18 +108,34 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEdit ? 'ખાતું સુધારો' : 'નવું ખાતું',
-            style: const TextStyle(
-                fontFamily: 'NotoSansGujarati', fontWeight: FontWeight.w800)),
+        title: Text(
+          _isEdit ? 'ખાતું સુધારો' : 'નવું ખાતું',
+          style: const TextStyle(
+            fontFamily: 'NotoSansGujarati',
+            fontWeight: FontWeight.w800,
+          ),
+        ),
         actions: [
           TextButton.icon(
             onPressed: _saving ? null : _save,
-            icon: const Icon(Icons.check, color: AppColors.primary),
-            label: const Text('સાચવો',
-                style: TextStyle(
-                    color: AppColors.primary,
-                    fontFamily: 'NotoSansGujarati',
-                    fontWeight: FontWeight.w700)),
+            icon: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  )
+                : const Icon(Icons.check, color: AppColors.primary),
+            label: const Text(
+              'સાચવો',
+              style: TextStyle(
+                color: AppColors.primary,
+                fontFamily: 'NotoSansGujarati',
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ),
         ],
       ),
@@ -121,45 +144,50 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // ── Preview Card ───────────────────────
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               margin: const EdgeInsets.only(bottom: 20),
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: accentColor.withOpacity(0.1),
+                color: accentColor.withValues(alpha: 0.10),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: accentColor.withOpacity(0.3)),
+                border: Border.all(color: accentColor.withValues(alpha: 0.30)),
               ),
               child: Row(
                 children: [
                   Text(_icon, style: const TextStyle(fontSize: 40)),
                   const SizedBox(width: 16),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _nameCtrl.text.isEmpty ? 'ખાતાનું નામ' : _nameCtrl.text,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: 'NotoSansGujarati',
-                          color: accentColor,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _nameCtrl.text.isEmpty
+                              ? 'ખાતાનું નામ'
+                              : _nameCtrl.text,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'NotoSansGujarati',
+                            color: accentColor,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      Text(_type.label,
+                        const SizedBox(height: 4),
+                        Text(
+                          _type.label,
                           style: TextStyle(
                             fontSize: 12,
                             fontFamily: 'NotoSansGujarati',
-                            color: accentColor.withOpacity(0.7),
-                          )),
-                    ],
+                            color: accentColor.withValues(alpha: 0.75),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-
-            // ── Account Name ───────────────────────
             _sectionTitle('ખાતાની વિગત'),
             const SizedBox(height: 8),
             TextFormField(
@@ -168,12 +196,12 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
               decoration: _inputDec(
                 label: 'ખાતાનું નામ *',
                 hint: 'દા.ત. SBI Saving, રોકડ...',
-                icon: Icons.account_balance_wallet,
+                icon: Icons.account_balance_wallet_outlined,
               ),
-              validator: (v) => v!.trim().isEmpty ? 'નામ લખો' : null,
+              validator: (v) =>
+                  v == null || v.trim().isEmpty ? 'નામ લખો' : null,
             ),
             const SizedBox(height: 12),
-
             TextFormField(
               controller: _balCtrl,
               keyboardType:
@@ -185,54 +213,58 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
               ),
             ),
             const SizedBox(height: 20),
-
-            // ── Account Type ───────────────────────
             _sectionTitle('ખાતાનો પ્રકાર'),
             const SizedBox(height: 10),
-            Row(
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
               children: AccountType.values.map((t) {
                 final sel = _type == t;
-                return Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() {
-                      _type = t;
-                      _icon = t.icon;
-                    }),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
+                return GestureDetector(
+                  onTap: () => setState(() {
+                    _type = t;
+                    _icon = t.icon;
+                  }),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: (MediaQuery.of(context).size.width - 48) / 2,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: sel
+                          ? accentColor
+                          : Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
                         color: sel
                             ? accentColor
-                            : Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest
-                                .withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(12),
+                            : Colors.grey.withValues(alpha: 0.15),
                       ),
-                      child: Column(
-                        children: [
-                          Text(t.icon, style: const TextStyle(fontSize: 22)),
-                          const SizedBox(height: 4),
-                          Text(t.label,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontFamily: 'NotoSansGujarati',
-                                color: sel ? Colors.white : null,
-                                fontWeight:
-                                    sel ? FontWeight.w700 : FontWeight.normal,
-                              )),
-                        ],
-                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(t.icon, style: const TextStyle(fontSize: 22)),
+                        const SizedBox(height: 6),
+                        Text(
+                          t.label,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'NotoSansGujarati',
+                            color: sel ? Colors.white : null,
+                            fontWeight:
+                                sel ? FontWeight.w700 : FontWeight.normal,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 );
               }).toList(),
             ),
             const SizedBox(height: 20),
-
-            // ── Icon Picker ────────────────────────
             _sectionTitle('Icon પસંદ કરો'),
             const SizedBox(height: 10),
             Wrap(
@@ -248,11 +280,11 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                     height: 52,
                     decoration: BoxDecoration(
                       color: sel
-                          ? accentColor.withOpacity(0.15)
+                          ? accentColor.withValues(alpha: 0.15)
                           : Theme.of(context)
                               .colorScheme
                               .surfaceContainerHighest
-                              .withOpacity(0.3),
+                              .withValues(alpha: 0.35),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: sel ? accentColor : Colors.transparent,
@@ -267,8 +299,6 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
               }).toList(),
             ),
             const SizedBox(height: 20),
-
-            // ── Color Picker ───────────────────────
             _sectionTitle('રંગ પસંદ કરો'),
             const SizedBox(height: 10),
             Wrap(
@@ -293,7 +323,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                       boxShadow: sel
                           ? [
                               BoxShadow(
-                                color: color.withOpacity(0.5),
+                                color: color.withValues(alpha: 0.50),
                                 blurRadius: 8,
                                 offset: const Offset(0, 2),
                               )
@@ -308,8 +338,6 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
               }).toList(),
             ),
             const SizedBox(height: 32),
-
-            // ── Save Button ────────────────────────
             ElevatedButton.icon(
               onPressed: _saving ? null : _save,
               style: ElevatedButton.styleFrom(
@@ -325,7 +353,10 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
                   : const Icon(Icons.save_rounded),
               label: Text(
                 _isEdit ? 'ખાતું સુધારો' : 'ખાતું સાચવો',
@@ -343,12 +374,14 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     );
   }
 
-  Widget _sectionTitle(String title) => Text(title,
-      style: const TextStyle(
-        fontFamily: 'NotoSansGujarati',
-        fontWeight: FontWeight.w700,
-        fontSize: 14,
-      ));
+  Widget _sectionTitle(String title) => Text(
+        title,
+        style: const TextStyle(
+          fontFamily: 'NotoSansGujarati',
+          fontWeight: FontWeight.w700,
+          fontSize: 14,
+        ),
+      );
 
   InputDecoration _inputDec({
     required String label,

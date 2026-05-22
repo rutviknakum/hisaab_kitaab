@@ -35,6 +35,7 @@ class LoanPaymentModel {
   final DateTime paymentDate;
   final PaymentTowards towards;
   final String? note;
+  final String accountId;
   final DateTime createdAt;
 
   LoanPaymentModel({
@@ -45,6 +46,7 @@ class LoanPaymentModel {
     required this.paymentDate,
     required this.towards,
     this.note,
+    required this.accountId,
     DateTime? createdAt,
   })  : id = id ?? const Uuid().v4(),
         createdAt = createdAt ?? DateTime.now();
@@ -57,6 +59,7 @@ class LoanPaymentModel {
         DbConstants.cPayDate: paymentDate.toIso8601String(),
         DbConstants.cPayTowards: towards.name,
         DbConstants.cPayNote: note,
+        DbConstants.cPayAccountId: accountId,
         DbConstants.cCreatedAt: createdAt.toIso8601String(),
       };
 
@@ -69,6 +72,7 @@ class LoanPaymentModel {
         paymentDate: DateTime.parse(map[DbConstants.cPayDate]),
         towards: PaymentTowards.values.byName(map[DbConstants.cPayTowards]),
         note: map[DbConstants.cPayNote],
+        accountId: map[DbConstants.cPayAccountId],
         createdAt: DateTime.parse(map[DbConstants.cCreatedAt]),
       );
 }

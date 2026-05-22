@@ -30,6 +30,9 @@ class TransactionTile extends StatelessWidget {
         context.read<AccountProvider>().getById(transaction.accountId);
     final colorScheme = Theme.of(context).colorScheme;
 
+    final hasSubtitle =
+        transaction.subtitle != null && transaction.subtitle!.trim().isNotEmpty;
+
     return Slidable(
       key: ValueKey(transaction.id),
       endActionPane: ActionPane(
@@ -77,6 +80,9 @@ class TransactionTile extends StatelessWidget {
           ],
         ),
         child: ListTile(
+          isThreeLine: hasSubtitle ||
+              showDate ||
+              (transaction.note?.isNotEmpty ?? false),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,
             vertical: 4,
@@ -110,6 +116,20 @@ class TransactionTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (hasSubtitle) ...[
+                  Text(
+                    transaction.subtitle!,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontFamily: 'NotoSansGujarati',
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface.withValues(alpha: 0.72),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                ],
                 Row(
                   children: [
                     Expanded(
@@ -165,6 +185,7 @@ class TransactionTile extends StatelessWidget {
                       color: colorScheme.onSurface.withValues(alpha: 0.4),
                       fontStyle: FontStyle.italic,
                     ),
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],

@@ -62,6 +62,7 @@ class DbConstants {
   static const String cLoanTotalMonths = 'total_months';
   static const String cLoanStatus = 'status';
   static const String cLoanNote = 'note';
+  static const String cPayAccountId = 'account_id';
 
   // ── Loan Payments ─────────────────────────────
   static const String cPayLoanId = 'loan_id';

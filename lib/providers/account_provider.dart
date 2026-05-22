@@ -12,7 +12,7 @@ class AccountProvider with ChangeNotifier {
   List<AccountModel> get activeAccounts =>
       _accounts.where((a) => a.isActive).toList();
 
-  double get totalBalance => _accounts.fold(0, (sum, a) => sum + a.balance);
+  double get totalBalance => _accounts.fold(0.0, (sum, a) => sum + a.balance);
 
   String? get _currentUserId => supabase.auth.currentUser?.id;
 
@@ -43,6 +43,10 @@ class AccountProvider with ChangeNotifier {
         .toList();
 
     notifyListeners();
+  }
+
+  Future<void> refresh() async {
+    await loadAccounts();
   }
 
   Future<void> addAccount(AccountModel account) async {
@@ -81,6 +85,7 @@ class AccountProvider with ChangeNotifier {
     await updateAccount(updated);
   }
 
+  // Use this ONLY if you are NOT using database triggers.
   Future<void> adjustBalance(
     String accountId,
     double amount,
@@ -121,11 +126,10 @@ class AccountProvider with ChangeNotifier {
 
     for (final acc in _accounts) {
       final correctedBalance = balances[acc.id] ?? 0.0;
-      final updated = acc.copyWith(balance: correctedBalance);
 
       await supabase
           .from(DbConstants.tAccounts)
-          .update(updated.toMap())
+          .update({'balance': correctedBalance})
           .eq(DbConstants.cId, acc.id)
           .eq(DbConstants.cUserId, userId);
     }

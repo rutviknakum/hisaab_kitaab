@@ -27,25 +27,6 @@ class TransactionProvider with ChangeNotifier {
       _transactions.where((t) => t.accountId == accountId).toList()
         ..sort((a, b) => b.date.compareTo(a.date));
 
-  List<TransactionModel> getByDateRange(DateTime from, DateTime to) {
-    final start = DateTime(from.year, from.month, from.day);
-    final end = DateTime(to.year, to.month, to.day, 23, 59, 59);
-    return _transactions
-        .where((t) => !t.date.isBefore(start) && !t.date.isAfter(end))
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
-  }
-
-  double get totalIncome => _transactions
-      .where((t) => t.type == TransactionType.income)
-      .fold(0.0, (s, t) => s + t.amount);
-
-  double get totalExpense => _transactions
-      .where((t) => t.type == TransactionType.expense)
-      .fold(0.0, (s, t) => s + t.amount);
-
-  double get balance => totalIncome - totalExpense;
-
   double monthlyIncome(int year, int month) => getByMonth(year, month)
       .where((t) => t.type == TransactionType.income)
       .fold(0.0, (s, t) => s + t.amount);
@@ -53,68 +34,6 @@ class TransactionProvider with ChangeNotifier {
   double monthlyExpense(int year, int month) => getByMonth(year, month)
       .where((t) => t.type == TransactionType.expense)
       .fold(0.0, (s, t) => s + t.amount);
-
-  double monthlyBalance(int year, int month) =>
-      monthlyIncome(year, month) - monthlyExpense(year, month);
-
-  Map<String, double> expenseByCategory({
-    int? year,
-    int? month,
-  }) {
-    final list = (year != null && month != null)
-        ? getByMonth(year, month)
-        : List<TransactionModel>.from(_transactions);
-
-    final Map<String, double> map = {};
-    for (final t in list.where((t) => t.type == TransactionType.expense)) {
-      map[t.categoryName] = (map[t.categoryName] ?? 0) + t.amount;
-    }
-    return map;
-  }
-
-  Map<String, double> incomeByCategory({
-    int? year,
-    int? month,
-  }) {
-    final list = (year != null && month != null)
-        ? getByMonth(year, month)
-        : List<TransactionModel>.from(_transactions);
-
-    final Map<String, double> map = {};
-    for (final t in list.where((t) => t.type == TransactionType.income)) {
-      map[t.categoryName] = (map[t.categoryName] ?? 0) + t.amount;
-    }
-    return map;
-  }
-
-  List<Map<String, dynamic>> get last6MonthsData {
-    final now = DateTime.now();
-    return List.generate(6, (i) {
-      final date = DateTime(now.year, now.month - (5 - i));
-      final income = monthlyIncome(date.year, date.month);
-      final expense = monthlyExpense(date.year, date.month);
-      return <String, dynamic>{
-        'month': date,
-        'income': income,
-        'expense': expense,
-        'balance': income - expense,
-      };
-    });
-  }
-
-  List<Map<String, dynamic>> yearlyData(int year) {
-    return List.generate(12, (i) {
-      final month = i + 1;
-      final income = monthlyIncome(year, month);
-      final expense = monthlyExpense(year, month);
-      return <String, dynamic>{
-        'month': month,
-        'income': income,
-        'expense': expense,
-        'balance': income - expense,
-      };
-    });
-  }
 
   Future<void> loadTransactions() async {
     final userId = _currentUserId;
@@ -126,7 +45,21 @@ class TransactionProvider with ChangeNotifier {
 
     final maps = await supabase
         .from(DbConstants.tTransactions)
-        .select()
+        .select('''
+          id,
+          user_id,
+          title,
+          subtitle,
+          amount,
+          type,
+          category_id,
+          category_name,
+          category_emoji,
+          account_id,
+          date,
+          note,
+          created_at
+        ''')
         .eq(DbConstants.cUserId, userId)
         .order(DbConstants.cTxnDate, ascending: false);
 
@@ -142,8 +75,8 @@ class TransactionProvider with ChangeNotifier {
     if (userId == null) throw Exception('User not logged in');
 
     final newTxn = txn.copyWith(userId: userId);
-
     await supabase.from(DbConstants.tTransactions).insert(newTxn.toMap());
+
     _transactions.insert(0, newTxn);
     notifyListeners();
   }
@@ -154,14 +87,23 @@ class TransactionProvider with ChangeNotifier {
 
     final updatedTxn = txn.copyWith(userId: userId);
 
+    final map = Map<String, dynamic>.from(updatedTxn.toMap());
+    map.remove(DbConstants.cId);
+    map.remove(DbConstants.cUserId);
+    map.remove(DbConstants.cCreatedAt);
+
     await supabase
         .from(DbConstants.tTransactions)
-        .update(updatedTxn.toMap())
+        .update(map)
         .eq(DbConstants.cId, updatedTxn.id)
         .eq(DbConstants.cUserId, userId);
 
     final idx = _transactions.indexWhere((t) => t.id == updatedTxn.id);
-    if (idx != -1) _transactions[idx] = updatedTxn;
+    if (idx != -1) {
+      _transactions[idx] = updatedTxn;
+      _transactions.sort((a, b) => b.date.compareTo(a.date));
+    }
+
     notifyListeners();
   }
 
@@ -190,19 +132,6 @@ class TransactionProvider with ChangeNotifier {
         .eq(DbConstants.cUserId, userId);
 
     _transactions.removeWhere((t) => t.accountId == accountId);
-    notifyListeners();
-  }
-
-  Future<void> clearAll() async {
-    final userId = _currentUserId;
-    if (userId == null) throw Exception('User not logged in');
-
-    await supabase
-        .from(DbConstants.tTransactions)
-        .delete()
-        .eq(DbConstants.cUserId, userId);
-
-    _transactions.clear();
     notifyListeners();
   }
 }

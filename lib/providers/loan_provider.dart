@@ -216,7 +216,8 @@ class LoanProvider with ChangeNotifier {
     final activeLoans = activeLoansOfPerson(id);
     if (activeLoans.isNotEmpty) {
       throw Exception(
-          'Active loan હોય ત્યાં સુધી વ્યક્તિ delete કરી શકાતી નથી.');
+        'Active loan હોય ત્યાં સુધી વ્યક્તિ delete કરી શકાતી નથી.',
+      );
     }
 
     final personLoans = loansOfPerson(id);
@@ -299,6 +300,10 @@ class LoanProvider with ChangeNotifier {
     final userId = _currentUserId;
     if (userId == null) throw Exception('User not logged in');
 
+    if (payment.accountId.isEmpty) {
+      throw Exception('Account પસંદ કરો');
+    }
+
     final newPayment = LoanPaymentModel(
       id: payment.id,
       userId: userId,
@@ -307,6 +312,7 @@ class LoanProvider with ChangeNotifier {
       paymentDate: payment.paymentDate,
       towards: payment.towards,
       note: payment.note,
+      accountId: payment.accountId,
       createdAt: payment.createdAt,
     );
 

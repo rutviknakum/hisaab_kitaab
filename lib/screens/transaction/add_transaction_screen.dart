@@ -10,6 +10,7 @@ import '../../providers/account_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/transaction_provider.dart';
+import '../../main.dart';
 
 class AddTransactionScreen extends StatefulWidget {
   final TransactionModel? existing;
@@ -63,6 +64,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await context.read<CategoryProvider>().loadCategories();
+      await context.read<AccountProvider>().loadAccounts();
       if (!mounted) return;
 
       if (_isEdit) {
@@ -154,6 +156,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
       return;
     }
 
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      _showSnack('User login મળ્યો નથી', isError: true);
+      return;
+    }
+
     setState(() => _saving = true);
 
     try {
@@ -162,7 +170,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
 
       final txn = TransactionModel(
         id: widget.existing?.id,
-        userId: widget.existing?.userId ?? '',
+        userId: widget.existing?.userId.isNotEmpty == true
+            ? widget.existing!.userId
+            : user.id,
         title: _titleCtrl.text.trim(),
         amount: amount,
         type: _type,
@@ -175,36 +185,18 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
       );
 
       if (_isEdit) {
-        final oldTxn = widget.existing!;
-        final oldWasIncome = oldTxn.type == TransactionType.income;
-        final newIsIncome = _type == TransactionType.income;
-
-        await accP.adjustBalance(
-          oldTxn.accountId,
-          oldTxn.amount,
-          !oldWasIncome,
-        );
-
-        await accP.adjustBalance(
-          _accountId!,
-          amount,
-          newIsIncome,
-        );
-
         await txnP.updateTransaction(txn);
         _showSnack('નોંધ સુધારાઈ ✅');
       } else {
-        await accP.adjustBalance(
-          _accountId!,
-          amount,
-          _type == TransactionType.income,
-        );
-
         await txnP.addTransaction(txn);
         _showSnack('નોંધ સાચવાઈ ✅');
       }
 
-      if (mounted) Navigator.pop(context);
+      await accP.loadAccounts();
+      await txnP.loadTransactions();
+
+      if (!mounted) return;
+      Navigator.pop(context, true);
     } catch (e) {
       _showSnack('સાચવવામાં તકલીફ આવી: $e', isError: true);
     } finally {
@@ -710,10 +702,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                           .surfaceContainerHighest
                           .withOpacity(0.32),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.transparent,
-                        width: 1.4,
-                      ),
                     ),
                     child: const Text(
                       '+ નવી કેટેગરી',

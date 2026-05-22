@@ -121,7 +121,7 @@ class AccountsListScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'કુલ બાકી રકમ',
+                  'કુલ રકમ',
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 12,

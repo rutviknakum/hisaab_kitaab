@@ -7,6 +7,7 @@ class TransactionModel {
   final String id;
   final String userId;
   final String title;
+  final String? subtitle;
   final double amount;
   final TransactionType type;
   final String categoryId;
@@ -21,6 +22,7 @@ class TransactionModel {
     String? id,
     required this.userId,
     required this.title,
+    this.subtitle,
     required this.amount,
     required this.type,
     required this.categoryId,
@@ -39,6 +41,7 @@ class TransactionModel {
   TransactionModel copyWith({
     String? userId,
     String? title,
+    String? subtitle,
     double? amount,
     TransactionType? type,
     String? categoryId,
@@ -52,6 +55,7 @@ class TransactionModel {
       id: id,
       userId: userId ?? this.userId,
       title: title ?? this.title,
+      subtitle: subtitle ?? this.subtitle,
       amount: amount ?? this.amount,
       type: type ?? this.type,
       categoryId: categoryId ?? this.categoryId,
@@ -68,6 +72,7 @@ class TransactionModel {
         DbConstants.cId: id,
         DbConstants.cUserId: userId,
         DbConstants.cTxnTitle: title,
+        'subtitle': subtitle,
         DbConstants.cTxnAmount: amount,
         DbConstants.cTxnType: type.name,
         'category_id': categoryId,
@@ -83,13 +88,14 @@ class TransactionModel {
     return TransactionModel(
       id: map[DbConstants.cId],
       userId: map[DbConstants.cUserId] ?? '',
-      title: map[DbConstants.cTxnTitle],
+      title: map[DbConstants.cTxnTitle] ?? '',
+      subtitle: map['subtitle'],
       amount: (map[DbConstants.cTxnAmount] as num).toDouble(),
       type: TransactionType.values.byName(map[DbConstants.cTxnType]),
       categoryId: map['category_id'] ?? '',
       categoryName: map['category_name'] ?? 'કેટેગરી',
       categoryEmoji: map['category_emoji'] ?? '📁',
-      accountId: map[DbConstants.cTxnAccId],
+      accountId: map[DbConstants.cTxnAccId] ?? '',
       date: DateTime.parse(map[DbConstants.cTxnDate]),
       note: map[DbConstants.cTxnNote],
       createdAt: DateTime.parse(map[DbConstants.cCreatedAt]),

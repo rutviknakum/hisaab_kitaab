@@ -34,18 +34,15 @@ class AccountsListScreen extends StatelessWidget {
           final accounts = provider.activeAccounts;
           final cur = ctx.read<SettingsProvider>().currency;
 
-          // ✅ ctx pass — context નહીં
           if (accounts.isEmpty) {
             return _buildEmptyState(ctx);
           }
 
-          // ── Group by AccountType ──
-          final cashAccounts =
-              accounts.where((a) => a.type == AccountType.cash).toList();
-          final bankAccounts =
-              accounts.where((a) => a.type == AccountType.bank).toList();
-          final upiAccounts =
-              accounts.where((a) => a.type == AccountType.upi).toList();
+          // ── Dynamic Group by AccountType (all types auto-included) ──
+          final grouped = {
+            for (final type in AccountType.values)
+              type: accounts.where((a) => a.type == type).toList(),
+          };
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -54,41 +51,18 @@ class AccountsListScreen extends StatelessWidget {
               _buildTotalCard(ctx, provider.totalBalance, cur),
               const SizedBox(height: 20),
 
-              if (cashAccounts.isNotEmpty) ...[
-                _GroupHeader(
-                  icon: AccountType.cash.icon,
-                  title: AccountType.cash.label,
-                ),
-                const SizedBox(height: 8),
-                ...cashAccounts.map(
-                  (acc) => _buildAccountTile(ctx, acc, cur, provider),
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              if (bankAccounts.isNotEmpty) ...[
-                _GroupHeader(
-                  icon: AccountType.bank.icon,
-                  title: AccountType.bank.label,
-                ),
-                const SizedBox(height: 8),
-                ...bankAccounts.map(
-                  (acc) => _buildAccountTile(ctx, acc, cur, provider),
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              if (upiAccounts.isNotEmpty) ...[
-                _GroupHeader(
-                  icon: AccountType.upi.icon,
-                  title: AccountType.upi.label,
-                ),
-                const SizedBox(height: 8),
-                ...upiAccounts.map(
-                  (acc) => _buildAccountTile(ctx, acc, cur, provider),
-                ),
-                const SizedBox(height: 16),
-              ],
+              for (final type in AccountType.values)
+                if (grouped[type]!.isNotEmpty) ...[
+                  _GroupHeader(
+                    icon: type.icon,
+                    title: type.label,
+                  ),
+                  const SizedBox(height: 8),
+                  ...grouped[type]!.map(
+                    (acc) => _buildAccountTile(ctx, acc, cur, provider),
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
               const SizedBox(height: 80),
             ],
@@ -448,7 +422,7 @@ class AccountsListScreen extends StatelessWidget {
           style: TextStyle(fontFamily: 'NotoSansGujarati'),
         ),
         content: Text(
-          '"$name" ખાતું ભૂంસાઈ જશે.\nઆ ક્રિયા undo ન થઈ શકે!',
+          '"$name" ખાતું ભૂંસાઈ જશે.\nઆ ક્રિયા undo ન થઈ શકે!',
           style: const TextStyle(
             fontFamily: 'NotoSansGujarati',
             height: 1.5,

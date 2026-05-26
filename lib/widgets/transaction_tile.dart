@@ -25,6 +25,7 @@ class TransactionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isIncome = transaction.type == TransactionType.income;
+    final isCcPayment = transaction.type == TransactionType.ccPayment;
     final cur = context.read<SettingsProvider>().currency;
     final account =
         context.read<AccountProvider>().getById(transaction.accountId);
@@ -32,6 +33,24 @@ class TransactionTile extends StatelessWidget {
 
     final hasSubtitle =
         transaction.subtitle != null && transaction.subtitle!.trim().isNotEmpty;
+
+    final amountColor = isIncome
+        ? AppColors.income
+        : isCcPayment
+            ? AppColors.primary
+            : AppColors.expense;
+
+    final chipBg = isIncome
+        ? AppColors.incomeLight
+        : isCcPayment
+            ? AppColors.primary.withOpacity(0.10)
+            : AppColors.expenseLight;
+
+    final chipText = isIncome
+        ? 'આવક'
+        : isCcPayment
+            ? 'CC બિલ'
+            : 'ખર્ચ';
 
     return Slidable(
       key: ValueKey(transaction.id),
@@ -91,7 +110,7 @@ class TransactionTile extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: isIncome ? AppColors.incomeLight : AppColors.expenseLight,
+              color: chipBg,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
@@ -201,7 +220,7 @@ class TransactionTile extends StatelessWidget {
               Text(
                 '${isIncome ? '+' : '-'}$cur ${_fmt(transaction.amount)}',
                 style: TextStyle(
-                  color: isIncome ? AppColors.income : AppColors.expense,
+                  color: amountColor,
                   fontWeight: FontWeight.w800,
                   fontSize: 14,
                 ),
@@ -213,17 +232,16 @@ class TransactionTile extends StatelessWidget {
                   vertical: 2,
                 ),
                 decoration: BoxDecoration(
-                  color:
-                      isIncome ? AppColors.incomeLight : AppColors.expenseLight,
+                  color: chipBg,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  isIncome ? 'આવક' : 'ખર્ચ',
+                  chipText,
                   style: TextStyle(
                     fontSize: 9,
                     fontFamily: 'NotoSansGujarati',
                     fontWeight: FontWeight.w700,
-                    color: isIncome ? AppColors.income : AppColors.expense,
+                    color: amountColor,
                   ),
                 ),
               ),
@@ -315,12 +333,21 @@ class TransactionTile extends StatelessWidget {
     );
 
     if (confirm == true && context.mounted) {
-      await accP.adjustBalance(
-        transaction.accountId,
-        transaction.amount,
-        transaction.type == TransactionType.expense,
-      );
       await txnP.deleteTransaction(transaction.id);
+      await accP.recalculateBalancesFromTransactions();
+      await accP.loadAccounts();
+      await txnP.loadTransactions();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'નોંધ કાઢી નાખવામાં આવી ✅',
+              style: TextStyle(fontFamily: 'NotoSansGujarati'),
+            ),
+          ),
+        );
+      }
     }
   }
 }

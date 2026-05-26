@@ -2,7 +2,7 @@ class DbConstants {
   DbConstants._();
 
   static const String dbName = 'hisaab_kitaab.db';
-  static const int dbVersion = 3;
+  static const int dbVersion = 4;
 
   // ── Table Names ───────────────────────────────
   static const String tAccounts = 'accounts';
@@ -20,13 +20,15 @@ class DbConstants {
   static const String cCreatedAt = 'created_at';
   static const String cUpdatedAt = 'updated_at';
 
-  // ── Accounts ──────────────────────────────────
+// ── Accounts ──────────────────────────────────
   static const String cAccName = 'name';
   static const String cAccType = 'type';
   static const String cAccBalance = 'balance';
   static const String cAccColor = 'color';
   static const String cAccIcon = 'icon';
   static const String cAccIsActive = 'is_active';
+  static const String cAccCreditLimit = 'credit_limit';
+  static const String cAccOutstandingAmt = 'outstanding_amount';
 
   // ── Transactions ──────────────────────────────
   static const String cTxnTitle = 'title';

@@ -24,7 +24,11 @@ class DatabaseHelper {
     );
   }
 
+  // ─────────────────────────────────────────────
+  //  Upgrade
+  // ─────────────────────────────────────────────
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // v1 → v2: userId columns
     if (oldVersion < 2) {
       final tables = [
         DbConstants.tAccounts,
@@ -43,6 +47,7 @@ class DatabaseHelper {
       }
     }
 
+    // v2 → v3: custom_category column
     if (oldVersion < 3) {
       try {
         await db.execute(
@@ -51,21 +56,43 @@ class DatabaseHelper {
         );
       } catch (_) {}
     }
+
+    // v3 → v4: credit card columns ← NEW
+    if (oldVersion < 4) {
+      try {
+        await db.execute(
+          'ALTER TABLE ${DbConstants.tAccounts} '
+          'ADD COLUMN ${DbConstants.cAccCreditLimit} REAL DEFAULT 0',
+        );
+      } catch (_) {}
+
+      try {
+        await db.execute(
+          'ALTER TABLE ${DbConstants.tAccounts} '
+          'ADD COLUMN ${DbConstants.cAccOutstandingAmt} REAL DEFAULT 0',
+        );
+      } catch (_) {}
+    }
   }
 
+  // ─────────────────────────────────────────────
+  //  Create
+  // ─────────────────────────────────────────────
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE ${DbConstants.tAccounts} (
-        ${DbConstants.cId}           TEXT PRIMARY KEY,
-        ${DbConstants.cUserId}       TEXT NOT NULL,
-        ${DbConstants.cAccName}      TEXT NOT NULL,
-        ${DbConstants.cAccType}      TEXT NOT NULL,
-        ${DbConstants.cAccBalance}   REAL DEFAULT 0,
-        ${DbConstants.cAccColor}     TEXT,
-        ${DbConstants.cAccIcon}      TEXT,
-        ${DbConstants.cAccIsActive}  INTEGER DEFAULT 1,
-        ${DbConstants.cCreatedAt}    TEXT NOT NULL,
-        ${DbConstants.cUpdatedAt}    TEXT NOT NULL
+        ${DbConstants.cId}                TEXT PRIMARY KEY,
+        ${DbConstants.cUserId}            TEXT NOT NULL,
+        ${DbConstants.cAccName}           TEXT NOT NULL,
+        ${DbConstants.cAccType}           TEXT NOT NULL,
+        ${DbConstants.cAccBalance}        REAL DEFAULT 0,
+        ${DbConstants.cAccColor}          TEXT,
+        ${DbConstants.cAccIcon}           TEXT,
+        ${DbConstants.cAccIsActive}       INTEGER DEFAULT 1,
+        ${DbConstants.cAccCreditLimit}    REAL DEFAULT 0,
+        ${DbConstants.cAccOutstandingAmt} REAL DEFAULT 0,
+        ${DbConstants.cCreatedAt}         TEXT NOT NULL,
+        ${DbConstants.cUpdatedAt}         TEXT NOT NULL
       )
     ''');
 
@@ -149,6 +176,9 @@ class DatabaseHelper {
     await _insertDefaults(db);
   }
 
+  // ─────────────────────────────────────────────
+  //  Defaults
+  // ─────────────────────────────────────────────
   Future<void> _insertDefaults(Database db) async {
     final now = DateTime.now().toIso8601String();
 
@@ -162,6 +192,8 @@ class DatabaseHelper {
         DbConstants.cAccColor: '#01696F',
         DbConstants.cAccIcon: '💵',
         DbConstants.cAccIsActive: 1,
+        DbConstants.cAccCreditLimit: 0.0, // ← NEW
+        DbConstants.cAccOutstandingAmt: 0.0, // ← NEW
         DbConstants.cCreatedAt: now,
         DbConstants.cUpdatedAt: now,
       },
@@ -174,6 +206,8 @@ class DatabaseHelper {
         DbConstants.cAccColor: '#006494',
         DbConstants.cAccIcon: '🏦',
         DbConstants.cAccIsActive: 1,
+        DbConstants.cAccCreditLimit: 0.0,
+        DbConstants.cAccOutstandingAmt: 0.0,
         DbConstants.cCreatedAt: now,
         DbConstants.cUpdatedAt: now,
       },
@@ -186,6 +220,8 @@ class DatabaseHelper {
         DbConstants.cAccColor: '#E07B39',
         DbConstants.cAccIcon: '📲',
         DbConstants.cAccIsActive: 1,
+        DbConstants.cAccCreditLimit: 0.0,
+        DbConstants.cAccOutstandingAmt: 0.0,
         DbConstants.cCreatedAt: now,
         DbConstants.cUpdatedAt: now,
       },
@@ -196,25 +232,19 @@ class DatabaseHelper {
     }
 
     final settings = [
-      {
-        DbConstants.cSetKey: DbConstants.kLanguage,
-        DbConstants.cSetValue: 'gu',
-      },
+      {DbConstants.cSetKey: DbConstants.kLanguage, DbConstants.cSetValue: 'gu'},
       {
         DbConstants.cSetKey: DbConstants.kTheme,
-        DbConstants.cSetValue: 'system',
+        DbConstants.cSetValue: 'system'
       },
       {
         DbConstants.cSetKey: DbConstants.kPinEnabled,
-        DbConstants.cSetValue: 'false',
+        DbConstants.cSetValue: 'false'
       },
-      {
-        DbConstants.cSetKey: DbConstants.kCurrency,
-        DbConstants.cSetValue: '₹',
-      },
+      {DbConstants.cSetKey: DbConstants.kCurrency, DbConstants.cSetValue: '₹'},
       {
         DbConstants.cSetKey: DbConstants.kOnboarded,
-        DbConstants.cSetValue: 'false',
+        DbConstants.cSetValue: 'false'
       },
     ];
 
@@ -223,13 +253,12 @@ class DatabaseHelper {
     }
   }
 
+  // ─────────────────────────────────────────────
+  //  CRUD helpers
+  // ─────────────────────────────────────────────
   Future<int> insert(String table, Map<String, dynamic> data) async {
     final db = await database;
-    return db.insert(
-      table,
-      data,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    return db.insert(table, data, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<List<Map<String, dynamic>>> getAll(
@@ -292,10 +321,7 @@ class DatabaseHelper {
     final db = await database;
     await db.insert(
       DbConstants.tSettings,
-      {
-        DbConstants.cSetKey: key,
-        DbConstants.cSetValue: value,
-      },
+      {DbConstants.cSetKey: key, DbConstants.cSetValue: value},
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }

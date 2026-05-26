@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/app_colors.dart';
+import '../../models/account_model.dart';
 import '../../models/app_category_model.dart';
 import '../../models/transaction_model.dart';
 import '../../providers/account_provider.dart';
@@ -37,28 +38,57 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
   TransactionType _type = TransactionType.expense;
   AppCategoryModel? _selectedCategory;
   String? _accountId;
+  String? _paymentFromAccountId;
+  String? _creditCardAccountId;
   DateTime _date = DateTime.now();
   bool _saving = false;
 
   bool get _isEdit => widget.existing != null;
+  bool get _isIncome => _type == TransactionType.income;
+  bool get _isExpense => _type == TransactionType.expense;
+  bool get _isCcPayment => _type == TransactionType.ccPayment;
 
   List<AppCategoryModel> get _categories {
+    if (_isCcPayment) return [];
     final type = _type == TransactionType.income ? 'income' : 'expense';
     return context.watch<CategoryProvider>().byType(type);
   }
+
+  List<AccountModel> get _allAccounts =>
+      context.watch<AccountProvider>().activeAccounts;
+
+  List<AccountModel> get _normalAccounts =>
+      _allAccounts.where((a) => !a.isCreditCard).toList();
+
+  List<AccountModel> get _creditCardAccounts =>
+      _allAccounts.where((a) => a.isCreditCard).toList();
 
   @override
   void initState() {
     super.initState();
 
-    _typeTab = TabController(length: 2, vsync: this);
+    _typeTab = TabController(length: 3, vsync: this);
     _typeTab.addListener(() {
       if (_typeTab.indexIsChanging) return;
       setState(() {
         _type = _typeTab.index == 0
             ? TransactionType.income
-            : TransactionType.expense;
+            : _typeTab.index == 1
+                ? TransactionType.expense
+                : TransactionType.ccPayment;
         _selectedCategory = null;
+        if (_isCcPayment) {
+          _accountId = null;
+          _paymentFromAccountId =
+              _normalAccounts.isNotEmpty ? _normalAccounts.first.id : null;
+          _creditCardAccountId = _creditCardAccounts.isNotEmpty
+              ? _creditCardAccounts.first.id
+              : null;
+        } else {
+          _paymentFromAccountId = null;
+          _creditCardAccountId = null;
+          _accountId = _allAccounts.isNotEmpty ? _allAccounts.first.id : null;
+        }
       });
     });
 
@@ -73,34 +103,54 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
         _amountCtrl.text = t.amount.toStringAsFixed(2);
         _noteCtrl.text = t.note ?? '';
         _type = t.type;
-        _accountId = t.accountId;
         _date = t.date;
-        _typeTab.index = t.type == TransactionType.income ? 0 : 1;
 
-        final categories = _categories;
-        try {
-          _selectedCategory =
-              categories.firstWhere((c) => c.id == t.categoryId);
-        } catch (_) {
-          _selectedCategory = AppCategoryModel(
-            id: t.categoryId,
-            userId: t.userId,
-            name: t.categoryName,
-            emoji: t.categoryEmoji,
-            type: t.type == TransactionType.income ? 'income' : 'expense',
-            isDefault: false,
-            isDeleted: false,
-            createdAt: t.createdAt,
-            updatedAt: t.createdAt,
-          );
+        _typeTab.index = _type == TransactionType.income
+            ? 0
+            : _type == TransactionType.expense
+                ? 1
+                : 2;
+
+        if (_isCcPayment) {
+          _paymentFromAccountId = t.accountId;
+          _creditCardAccountId = _creditCardAccounts.isNotEmpty
+              ? _creditCardAccounts.first.id
+              : null;
+        } else {
+          _accountId = t.accountId;
+          try {
+            _selectedCategory =
+                _categories.firstWhere((c) => c.id == t.categoryId);
+          } catch (_) {
+            _selectedCategory = AppCategoryModel(
+              id: t.categoryId,
+              userId: t.userId,
+              name: t.categoryName,
+              emoji: t.categoryEmoji,
+              type: t.type == TransactionType.income ? 'income' : 'expense',
+              isDefault: false,
+              isDeleted: false,
+              createdAt: t.createdAt,
+              updatedAt: t.createdAt,
+            );
+          }
         }
       } else {
         _type = widget.initialType ?? TransactionType.expense;
-        _typeTab.index = _type == TransactionType.income ? 0 : 1;
+        _typeTab.index = _type == TransactionType.income
+            ? 0
+            : _type == TransactionType.expense
+                ? 1
+                : 2;
 
-        final accounts = context.read<AccountProvider>().activeAccounts;
-        if (accounts.isNotEmpty) {
-          _accountId = accounts.first.id;
+        if (_isCcPayment) {
+          _paymentFromAccountId =
+              _normalAccounts.isNotEmpty ? _normalAccounts.first.id : null;
+          _creditCardAccountId = _creditCardAccounts.isNotEmpty
+              ? _creditCardAccounts.first.id
+              : null;
+        } else {
+          _accountId = _allAccounts.isNotEmpty ? _allAccounts.first.id : null;
         }
       }
 
@@ -125,30 +175,17 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
       lastDate: DateTime.now(),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme: Theme.of(ctx).colorScheme.copyWith(
-                primary: AppColors.primary,
-              ),
+          colorScheme:
+              Theme.of(ctx).colorScheme.copyWith(primary: AppColors.primary),
         ),
         child: child!,
       ),
     );
-    if (picked != null) {
-      setState(() => _date = picked);
-    }
+    if (picked != null) setState(() => _date = picked);
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-
-    if (_accountId == null) {
-      _showSnack('ખાતું પસંદ કરો', isError: true);
-      return;
-    }
-
-    if (_selectedCategory == null) {
-      _showSnack('કેટેગરી પસંદ કરો', isError: true);
-      return;
-    }
 
     final amount = double.tryParse(_amountCtrl.text.trim());
     if (amount == null || amount <= 0) {
@@ -162,36 +199,75 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
       return;
     }
 
+    if (_isCcPayment) {
+      if (_paymentFromAccountId == null) {
+        _showSnack('કયા ખાતામાંથી ચૂકવ્યું તે પસંદ કરો', isError: true);
+        return;
+      }
+      if (_creditCardAccountId == null) {
+        _showSnack('ક્રેડિટ કાર્ડ પસંદ કરો', isError: true);
+        return;
+      }
+    } else {
+      if (_accountId == null) {
+        _showSnack('ખાતું પસંદ કરો', isError: true);
+        return;
+      }
+      if (_selectedCategory == null) {
+        _showSnack('કેટેગરી પસંદ કરો', isError: true);
+        return;
+      }
+    }
+
     setState(() => _saving = true);
 
     try {
       final txnP = context.read<TransactionProvider>();
       final accP = context.read<AccountProvider>();
 
-      final txn = TransactionModel(
-        id: widget.existing?.id,
-        userId: widget.existing?.userId.isNotEmpty == true
-            ? widget.existing!.userId
-            : user.id,
-        title: _titleCtrl.text.trim(),
-        amount: amount,
-        type: _type,
-        categoryId: _selectedCategory!.id,
-        categoryName: _selectedCategory!.name,
-        categoryEmoji: _selectedCategory!.emoji,
-        accountId: _accountId!,
-        date: _date,
-        note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
-      );
+      final txn = _isCcPayment
+          ? TransactionModel(
+              id: widget.existing?.id,
+              userId: user.id,
+              title: _titleCtrl.text.trim().isEmpty
+                  ? 'ક્રેડિટ કાર્ડ બિલ ભર્યું'
+                  : _titleCtrl.text.trim(),
+              amount: amount,
+              type: TransactionType.ccPayment,
+              categoryId: 'cc_bill_payment',
+              categoryName: 'ક્રેડિટ કાર્ડ બિલ',
+              categoryEmoji: '💳',
+              accountId: _paymentFromAccountId!,
+              date: _date,
+              note:
+                  _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+            )
+          : TransactionModel(
+              id: widget.existing?.id,
+              userId: user.id,
+              title: _titleCtrl.text.trim(),
+              amount: amount,
+              type: _type,
+              categoryId: _selectedCategory!.id,
+              categoryName: _selectedCategory!.name,
+              categoryEmoji: _selectedCategory!.emoji,
+              accountId: _accountId!,
+              date: _date,
+              note:
+                  _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+            );
 
       if (_isEdit) {
         await txnP.updateTransaction(txn);
-        _showSnack('નોંધ સુધારાઈ ✅');
+        _showSnack(
+            _isCcPayment ? 'ક્રેડિટ કાર્ડ બિલ સુધારાઈ ✅' : 'નોંધ સુધારાઈ ✅');
       } else {
         await txnP.addTransaction(txn);
-        _showSnack('નોંધ સાચવાઈ ✅');
+        _showSnack(
+            _isCcPayment ? 'ક્રેડિટ કાર્ડ બિલ સાચવાયું ✅' : 'નોંધ સાચવાઈ ✅');
       }
 
+      await accP.recalculateBalancesFromTransactions();
       await accP.loadAccounts();
       await txnP.loadTransactions();
 
@@ -207,10 +283,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
   void _showSnack(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          msg,
-          style: const TextStyle(fontFamily: 'NotoSansGujarati'),
-        ),
+        content:
+            Text(msg, style: const TextStyle(fontFamily: 'NotoSansGujarati')),
         backgroundColor: isError ? AppColors.expense : AppColors.income,
         behavior: SnackBarBehavior.floating,
       ),
@@ -227,14 +301,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
       hintText: hint,
       prefixIcon:
           icon != null ? Icon(icon, color: AppColors.primary, size: 18) : null,
-      labelStyle: const TextStyle(
-        fontFamily: 'NotoSansGujarati',
-        fontSize: 13,
-      ),
-      hintStyle: const TextStyle(
-        fontFamily: 'NotoSansGujarati',
-        fontSize: 12,
-      ),
+      labelStyle: const TextStyle(fontFamily: 'NotoSansGujarati', fontSize: 13),
+      hintStyle: const TextStyle(fontFamily: 'NotoSansGujarati', fontSize: 12),
       border: InputBorder.none,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
     );
@@ -255,6 +323,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
   }
 
   Future<void> _openNewCategorySheet() async {
+    if (_isCcPayment) return;
+
     final nameCtrl = TextEditingController();
     final emojiCtrl = TextEditingController(text: '📁');
 
@@ -323,7 +393,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                     final emoji = emojiCtrl.text.trim().isEmpty
                         ? '📁'
                         : emojiCtrl.text.trim();
-
                     if (name.isEmpty) return;
 
                     final type =
@@ -336,7 +405,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                         );
 
                     if (!mounted) return;
-
                     await context.read<CategoryProvider>().loadCategories();
 
                     final updatedCategories = _categories;
@@ -378,9 +446,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
   @override
   Widget build(BuildContext context) {
     final cur = context.read<SettingsProvider>().currency;
-    final accounts = context.read<AccountProvider>().activeAccounts;
-    final isIncome = _type == TransactionType.income;
-    final accent = isIncome ? AppColors.income : AppColors.expense;
+    final accent = _isIncome
+        ? AppColors.income
+        : _isCcPayment
+            ? AppColors.primary
+            : AppColors.expense;
 
     return Scaffold(
       appBar: AppBar(
@@ -432,11 +502,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                 labelStyle: const TextStyle(
                   fontFamily: 'NotoSansGujarati',
                   fontWeight: FontWeight.w700,
-                  fontSize: 14,
+                  fontSize: 13,
                 ),
                 tabs: const [
                   Tab(text: '📈 આવક'),
                   Tab(text: '📉 ખર્ચ'),
+                  Tab(text: '💳 બિલ'),
                 ],
               ),
             ),
@@ -464,7 +535,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
                         width: 40,
@@ -475,7 +545,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          cur,
+                          _isCcPayment ? '💳' : cur,
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -490,22 +560,28 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              isIncome ? 'આવકની રકમ' : 'ખર્ચની રકમ',
+                              _isIncome
+                                  ? 'આવકની રકમ'
+                                  : _isCcPayment
+                                      ? 'ક્રેડિટ કાર્ડ બિલ રકમ'
+                                      : 'ખર્ચની રકમ',
                               style: TextStyle(
                                 fontFamily: 'NotoSansGujarati',
                                 fontSize: 14,
                                 fontWeight: FontWeight.w800,
                                 color: Theme.of(context).colorScheme.onSurface,
-                                height: 1.1,
                               ),
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              isIncome ? 'કેટલી આવક થઈ?' : 'કેટલો ખર્ચ થયો?',
+                              _isIncome
+                                  ? 'કેટલી આવક થઈ?'
+                                  : _isCcPayment
+                                      ? 'કેટલું બિલ ચૂકવ્યું?'
+                                      : 'કેટલો ખર્ચ થયો?',
                               style: TextStyle(
                                 fontFamily: 'NotoSansGujarati',
                                 fontSize: 12,
-                                fontWeight: FontWeight.w500,
                                 color: Theme.of(context)
                                     .colorScheme
                                     .onSurface
@@ -538,26 +614,16 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                           color: accent.withOpacity(0.10),
                           width: 1,
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.02),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
                       ),
                       child: TextFormField(
                         controller: _amountCtrl,
                         keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
+                            decimal: true),
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(
-                            RegExp(r'^\d*\.?\d{0,2}$'),
-                          ),
+                              RegExp(r'^\d*\.?\d{0,2}$')),
                         ],
                         textAlign: TextAlign.left,
-                        textAlignVertical: TextAlignVertical.center,
                         cursorColor: accent,
                         style: TextStyle(
                           fontSize: 34,
@@ -578,15 +644,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                           border: InputBorder.none,
                           isCollapsed: true,
                           contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 22,
-                          ),
+                              horizontal: 20, vertical: 22),
                           counterText: '',
                         ),
                         validator: (v) {
-                          if (v == null || v.trim().isEmpty) {
-                            return 'રકમ લખો';
-                          }
+                          if (v == null || v.trim().isEmpty) return 'રકમ લખો';
                           final n = double.tryParse(v);
                           if (n == null || n <= 0) return 'સાચી રકમ લખો';
                           return null;
@@ -603,119 +665,160 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                 controller: _titleCtrl,
                 decoration: _inputDec(
                   label: 'શીર્ષક *',
-                  hint: 'દા.ત. કિરાણા, ઑફિસ ખર્ચ...',
+                  hint: _isCcPayment
+                      ? 'દા.ત. SBI Card Bill'
+                      : 'દા.ત. કિરાણા, ઑફિસ ખર્ચ...',
                   icon: Icons.edit_rounded,
                 ),
-                validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'શીર્ષક લખો' : null,
+                validator: (v) {
+                  if (_isCcPayment) return null;
+                  return v == null || v.trim().isEmpty ? 'શીર્ષક લખો' : null;
+                },
               ),
             ),
             const SizedBox(height: 12),
-            _fieldCard(
-              child: DropdownButtonFormField<String>(
-                value: _accountId,
-                decoration: _inputDec(
-                  label: 'ખાતું *',
-                  icon: Icons.account_balance_wallet_rounded,
+            if (_isCcPayment) ...[
+              _fieldCard(
+                child: DropdownButtonFormField<String>(
+                  value: _paymentFromAccountId,
+                  decoration: _inputDec(
+                    label: 'કયા ખાતામાંથી ચૂકવ્યું? *',
+                    icon: Icons.account_balance_wallet_rounded,
+                  ),
+                  items: _normalAccounts
+                      .map(
+                        (a) => DropdownMenuItem(
+                          value: a.id,
+                          child: Text('${a.icon} ${a.name}',
+                              style: const TextStyle(
+                                  fontFamily: 'NotoSansGujarati')),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => setState(() => _paymentFromAccountId = v),
+                  validator: (v) => v == null ? 'ખાતું પસંદ કરો' : null,
                 ),
-                items: accounts
-                    .map(
-                      (a) => DropdownMenuItem(
-                        value: a.id,
+              ),
+              const SizedBox(height: 12),
+              _fieldCard(
+                child: DropdownButtonFormField<String>(
+                  value: _creditCardAccountId,
+                  decoration: _inputDec(
+                    label: 'કયું ક્રેડિટ કાર્ડ? *',
+                    icon: Icons.credit_card_rounded,
+                  ),
+                  items: _creditCardAccounts
+                      .map(
+                        (a) => DropdownMenuItem(
+                          value: a.id,
+                          child: Text('${a.icon} ${a.name}',
+                              style: const TextStyle(
+                                  fontFamily: 'NotoSansGujarati')),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => setState(() => _creditCardAccountId = v),
+                  validator: (v) => v == null ? 'ક્રેડિટ કાર્ડ પસંદ કરો' : null,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ] else ...[
+              _fieldCard(
+                child: DropdownButtonFormField<String>(
+                  value: _accountId,
+                  decoration: _inputDec(
+                    label: 'ખાતું *',
+                    icon: Icons.account_balance_wallet_rounded,
+                  ),
+                  items: _allAccounts
+                      .map(
+                        (a) => DropdownMenuItem(
+                          value: a.id,
+                          child: Text('${a.icon} ${a.name}',
+                              style: const TextStyle(
+                                  fontFamily: 'NotoSansGujarati')),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => setState(() => _accountId = v),
+                  validator: (v) => v == null ? 'ખાતું પસંદ કરો' : null,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'કેટેગરી *',
+                style: TextStyle(
+                  fontFamily: 'NotoSansGujarati',
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ..._categories.map((c) {
+                    final selected = _selectedCategory?.id == c.id;
+                    return GestureDetector(
+                      onTap: () => setState(() => _selectedCategory = c),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? accent.withOpacity(0.10)
+                              : Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest
+                                  .withOpacity(0.32),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: selected ? accent : Colors.transparent,
+                            width: 1.4,
+                          ),
+                        ),
                         child: Text(
-                          '${a.icon} ${a.name}',
-                          style:
-                              const TextStyle(fontFamily: 'NotoSansGujarati'),
+                          '${c.emoji} ${c.name}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'NotoSansGujarati',
+                            fontWeight:
+                                selected ? FontWeight.w700 : FontWeight.normal,
+                            color: selected ? accent : null,
+                          ),
                         ),
                       ),
-                    )
-                    .toList(),
-                onChanged: (v) => setState(() => _accountId = v),
-                validator: (v) => v == null ? 'ખાતું પસંદ કરો' : null,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'કેટેગરી *',
-              style: TextStyle(
-                fontFamily: 'NotoSansGujarati',
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ..._categories.map((c) {
-                  final selected = _selectedCategory?.id == c.id;
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedCategory = c;
-                      });
-                    },
+                    );
+                  }),
+                  GestureDetector(
+                    onTap: _openNewCategorySheet,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
+                          horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: selected
-                            ? accent.withOpacity(0.10)
-                            : Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest
-                                .withOpacity(0.32),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withOpacity(0.32),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: selected ? accent : Colors.transparent,
-                          width: 1.4,
-                        ),
                       ),
-                      child: Text(
-                        '${c.emoji} ${c.name}',
+                      child: const Text(
+                        '+ નવી કેટેગરી',
                         style: TextStyle(
                           fontSize: 12,
                           fontFamily: 'NotoSansGujarati',
-                          fontWeight:
-                              selected ? FontWeight.w700 : FontWeight.normal,
-                          color: selected ? accent : null,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
-                  );
-                }),
-                GestureDetector(
-                  onTap: _openNewCategorySheet,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest
-                          .withOpacity(0.32),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text(
-                      '+ નવી કેટેગરી',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontFamily: 'NotoSansGujarati',
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
             _fieldCard(
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -725,11 +828,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                     color: accent.withOpacity(0.10),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Icon(
-                    Icons.calendar_today,
-                    color: accent,
-                    size: 18,
-                  ),
+                  child: Icon(Icons.calendar_today, color: accent, size: 18),
                 ),
                 title: const Text(
                   'તારીખ',

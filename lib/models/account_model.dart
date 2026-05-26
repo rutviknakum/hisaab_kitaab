@@ -47,6 +47,8 @@ class AccountModel {
   final String name;
   final AccountType type;
   final double balance;
+  final double creditLimit;
+  final double outstandingAmount;
   final String color;
   final String icon;
   final bool isActive;
@@ -59,6 +61,8 @@ class AccountModel {
     required this.name,
     required this.type,
     this.balance = 0.0,
+    this.creditLimit = 0.0,
+    this.outstandingAmount = 0.0,
     this.color = '#01696F',
     String? icon,
     this.isActive = true,
@@ -69,23 +73,31 @@ class AccountModel {
         createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
 
+  // ── Computed (Credit Card) ─────────────────────
+  bool get isCreditCard => type == AccountType.creditCard;
+
+  double get availableLimit =>
+      isCreditCard ? (creditLimit - outstandingAmount) : 0.0;
+
   AccountModel copyWith({
     String? userId,
     String? name,
     AccountType? type,
     double? balance,
+    double? creditLimit,
+    double? outstandingAmount,
     String? color,
     String? icon,
     bool? isActive,
   }) {
-    final newType = type ?? this.type;
-
     return AccountModel(
       id: id,
       userId: userId ?? this.userId,
       name: name ?? this.name,
-      type: newType,
+      type: type ?? this.type,
       balance: balance ?? this.balance,
+      creditLimit: creditLimit ?? this.creditLimit,
+      outstandingAmount: outstandingAmount ?? this.outstandingAmount,
       color: color ?? this.color,
       icon: icon ?? this.icon,
       isActive: isActive ?? this.isActive,
@@ -102,9 +114,11 @@ class AccountModel {
         DbConstants.cAccBalance: balance,
         DbConstants.cAccColor: color,
         DbConstants.cAccIcon: icon,
-        DbConstants.cAccIsActive: isActive,
+        DbConstants.cAccIsActive: isActive ? 1 : 0,
         DbConstants.cCreatedAt: createdAt.toIso8601String(),
         DbConstants.cUpdatedAt: updatedAt.toIso8601String(),
+        DbConstants.cAccCreditLimit: creditLimit,
+        DbConstants.cAccOutstandingAmt: outstandingAmount,
       };
 
   factory AccountModel.fromMap(Map<String, dynamic> map) => AccountModel(
@@ -112,7 +126,11 @@ class AccountModel {
         userId: map[DbConstants.cUserId] ?? '',
         name: map[DbConstants.cAccName],
         type: _parseAccountType(map[DbConstants.cAccType]),
-        balance: (map[DbConstants.cAccBalance] as num).toDouble(),
+        balance: ((map[DbConstants.cAccBalance] ?? 0) as num).toDouble(),
+        creditLimit:
+            ((map[DbConstants.cAccCreditLimit] ?? 0) as num).toDouble(),
+        outstandingAmount:
+            ((map[DbConstants.cAccOutstandingAmt] ?? 0) as num).toDouble(),
         color: map[DbConstants.cAccColor] ?? '#01696F',
         icon: map[DbConstants.cAccIcon],
         isActive: map[DbConstants.cAccIsActive] == true ||
@@ -123,11 +141,9 @@ class AccountModel {
 
   static AccountType _parseAccountType(dynamic raw) {
     final value = (raw ?? '').toString();
-
     for (final type in AccountType.values) {
       if (type.name == value) return type;
     }
-
     return AccountType.cash;
   }
 }

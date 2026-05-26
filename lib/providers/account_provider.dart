@@ -12,7 +12,31 @@ class AccountProvider with ChangeNotifier {
   List<AccountModel> get activeAccounts =>
       _accounts.where((a) => a.isActive).toList();
 
-  double get totalBalance => _accounts.fold(0.0, (sum, a) => sum + a.balance);
+  List<AccountModel> get normalAccounts =>
+      _accounts.where((a) => a.isActive && !a.isCreditCard).toList();
+
+  List<AccountModel> get creditCardAccounts =>
+      _accounts.where((a) => a.isActive && a.isCreditCard).toList();
+
+  double get totalBalance {
+    final normalTotal = _accounts
+        .where((a) => !a.isCreditCard)
+        .fold(0.0, (sum, a) => sum + a.balance);
+
+    final ccOutstanding = _accounts
+        .where((a) => a.isCreditCard)
+        .fold(0.0, (sum, a) => sum + a.outstandingAmount);
+
+    return normalTotal - ccOutstanding;
+  }
+
+  double get totalCcOutstanding => _accounts
+      .where((a) => a.isCreditCard)
+      .fold(0.0, (sum, a) => sum + a.outstandingAmount);
+
+  double get totalCcLimit => _accounts
+      .where((a) => a.isCreditCard)
+      .fold(0.0, (sum, a) => sum + a.creditLimit);
 
   String? get _currentUserId => supabase.auth.currentUser?.id;
 
@@ -45,9 +69,7 @@ class AccountProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> refresh() async {
-    await loadAccounts();
-  }
+  Future<void> refresh() async => await loadAccounts();
 
   Future<void> addAccount(AccountModel account) async {
     final userId = _currentUserId;
@@ -77,29 +99,6 @@ class AccountProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> updateBalance(String accountId, double newBalance) async {
-    final account = getById(accountId);
-    if (account == null) return;
-
-    final updated = account.copyWith(balance: newBalance);
-    await updateAccount(updated);
-  }
-
-  // Use this ONLY if you are NOT using database triggers.
-  Future<void> adjustBalance(
-    String accountId,
-    double amount,
-    bool isIncome,
-  ) async {
-    final account = getById(accountId);
-    if (account == null) return;
-
-    final newBalance =
-        isIncome ? account.balance + amount : account.balance - amount;
-
-    await updateBalance(accountId, newBalance);
-  }
-
   Future<void> recalculateBalancesFromTransactions() async {
     final userId = _currentUserId;
     if (userId == null) throw Exception('User not logged in');
@@ -114,22 +113,56 @@ class AccountProvider with ChangeNotifier {
         .toList();
 
     final Map<String, double> balances = {
-      for (final acc in _accounts) acc.id: 0.0,
+      for (final acc in _accounts.where((a) => !a.isCreditCard)) acc.id: 0.0,
+    };
+
+    final Map<String, double> outstandings = {
+      for (final acc in _accounts.where((a) => a.isCreditCard)) acc.id: 0.0,
     };
 
     for (final txn in transactions) {
-      final current = balances[txn.accountId] ?? 0.0;
-      balances[txn.accountId] = txn.type == TransactionType.income
-          ? current + txn.amount
-          : current - txn.amount;
+      final acc = getById(txn.accountId);
+      if (acc == null) continue;
+
+      if (acc.isCreditCard) {
+        if (txn.type == TransactionType.expense) {
+          outstandings[txn.accountId] =
+              (outstandings[txn.accountId] ?? 0) + txn.amount;
+        }
+      } else {
+        final current = balances[txn.accountId] ?? 0.0;
+        if (txn.type == TransactionType.income) {
+          balances[txn.accountId] = current + txn.amount;
+        } else if (txn.type == TransactionType.expense ||
+            txn.type == TransactionType.ccPayment) {
+          balances[txn.accountId] = current - txn.amount;
+        }
+      }
+
+      if (txn.type == TransactionType.ccPayment) {
+        final ccId =
+            txn.categoryId == 'cc_bill_payment' ? txn.accountId : txn.accountId;
+        final ccAcc = getById(ccId);
+        if (ccAcc != null && ccAcc.isCreditCard) {
+          outstandings[ccId] = (outstandings[ccId] ?? 0.0) - txn.amount;
+        }
+      }
     }
 
-    for (final acc in _accounts) {
-      final correctedBalance = balances[acc.id] ?? 0.0;
-
+    for (final acc in _accounts.where((a) => !a.isCreditCard)) {
       await supabase
           .from(DbConstants.tAccounts)
-          .update({'balance': correctedBalance})
+          .update({DbConstants.cAccBalance: balances[acc.id] ?? 0.0})
+          .eq(DbConstants.cId, acc.id)
+          .eq(DbConstants.cUserId, userId);
+    }
+
+    for (final acc in _accounts.where((a) => a.isCreditCard)) {
+      await supabase
+          .from(DbConstants.tAccounts)
+          .update({
+            DbConstants.cAccOutstandingAmt: outstandings[acc.id] ?? 0.0,
+          })
           .eq(DbConstants.cId, acc.id)
           .eq(DbConstants.cUserId, userId);
     }

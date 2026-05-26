@@ -32,7 +32,13 @@ class TransactionProvider with ChangeNotifier {
       .fold(0.0, (s, t) => s + t.amount);
 
   double monthlyExpense(int year, int month) => getByMonth(year, month)
-      .where((t) => t.type == TransactionType.expense)
+      .where((t) =>
+          t.type == TransactionType.expense ||
+          t.type == TransactionType.ccPayment)
+      .fold(0.0, (s, t) => s + t.amount);
+
+  double monthlyCcBillPayments(int year, int month) => getByMonth(year, month)
+      .where((t) => t.type == TransactionType.ccPayment)
       .fold(0.0, (s, t) => s + t.amount);
 
   Future<void> loadTransactions() async {

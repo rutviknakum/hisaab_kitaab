@@ -1,7 +1,24 @@
 import 'package:uuid/uuid.dart';
 import '../database/db_constants.dart';
 
-enum TransactionType { income, expense }
+enum TransactionType {
+  income,
+  expense,
+  ccPayment,
+}
+
+extension TransactionTypeInfo on TransactionType {
+  String get label {
+    switch (this) {
+      case TransactionType.income:
+        return 'આવક';
+      case TransactionType.expense:
+        return 'ખર્ચ';
+      case TransactionType.ccPayment:
+        return 'ક્રેડિટ કાર્ડ બિલ';
+    }
+  }
+}
 
 class TransactionModel {
   final String id;
@@ -37,6 +54,10 @@ class TransactionModel {
 
   String get displayCategory => categoryName;
   String get displayCategoryIcon => categoryEmoji;
+
+  bool get isIncome => type == TransactionType.income;
+  bool get isExpense => type == TransactionType.expense;
+  bool get isCcPayment => type == TransactionType.ccPayment;
 
   TransactionModel copyWith({
     String? userId,
@@ -85,13 +106,15 @@ class TransactionModel {
       };
 
   factory TransactionModel.fromMap(Map<String, dynamic> map) {
+    final rawType = (map[DbConstants.cTxnType] ?? 'expense').toString();
+
     return TransactionModel(
       id: map[DbConstants.cId],
       userId: map[DbConstants.cUserId] ?? '',
       title: map[DbConstants.cTxnTitle] ?? '',
       subtitle: map['subtitle'],
-      amount: (map[DbConstants.cTxnAmount] as num).toDouble(),
-      type: TransactionType.values.byName(map[DbConstants.cTxnType]),
+      amount: ((map[DbConstants.cTxnAmount] ?? 0) as num).toDouble(),
+      type: _parseTransactionType(rawType),
       categoryId: map['category_id'] ?? '',
       categoryName: map['category_name'] ?? 'કેટેગરી',
       categoryEmoji: map['category_emoji'] ?? '📁',
@@ -100,5 +123,12 @@ class TransactionModel {
       note: map[DbConstants.cTxnNote],
       createdAt: DateTime.parse(map[DbConstants.cCreatedAt]),
     );
+  }
+
+  static TransactionType _parseTransactionType(String raw) {
+    for (final type in TransactionType.values) {
+      if (type.name == raw) return type;
+    }
+    return TransactionType.expense;
   }
 }

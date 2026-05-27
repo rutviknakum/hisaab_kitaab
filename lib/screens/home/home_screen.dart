@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:hisaab_kitaab/screens/ledger/person_detail_screen.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+
 import '../../core/app_colors.dart';
 import '../../core/app_strings.dart';
 import '../../models/ledger_person_model.dart';
@@ -47,13 +48,17 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('ના',
-                style: TextStyle(fontFamily: 'NotoSansGujarati')),
+            child: const Text(
+              'ના',
+              style: TextStyle(fontFamily: 'NotoSansGujarati'),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('હા',
-                style: TextStyle(fontFamily: 'NotoSansGujarati')),
+            child: const Text(
+              'હા',
+              style: TextStyle(fontFamily: 'NotoSansGujarati'),
+            ),
           ),
         ],
       ),
@@ -80,13 +85,8 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Scaffold(
         body: Column(
           children: [
-            // ── Fixed: AppBar ──────────────────────────
             _buildAppBarWidget(context),
-
-            // ── Fixed: Balance Card (scroll સાથે નહીં જાય) ──
             _buildBalanceCardFixed(context),
-
-            // ── Scrollable content ─────────────────────
             Expanded(
               child: RefreshIndicator(
                 color: AppColors.primary,
@@ -113,8 +113,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-  // ── AppBar Widget (Fixed) ────────────────────────────────────────────────
 
   Widget _buildAppBarWidget(BuildContext context) {
     final now = DateTime.now();
@@ -183,8 +181,11 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.calendar_today_rounded,
-                    color: Colors.white, size: 12),
+                const Icon(
+                  Icons.calendar_today_rounded,
+                  color: Colors.white,
+                  size: 12,
+                ),
                 const SizedBox(width: 5),
                 Text(
                   fullDate,
@@ -204,8 +205,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Balance Card (Fixed, scroll સાથે ન જાય) ─────────────────────────────
-
   Widget _buildBalanceCardFixed(BuildContext context) {
     return Consumer2<TransactionProvider, AccountProvider>(
       builder: (ctx, txnP, accP, _) {
@@ -213,8 +212,10 @@ class _HomeScreenState extends State<HomeScreen> {
         final now = DateTime.now();
         final income = txnP.monthlyIncome(now.year, now.month);
         final expense = txnP.monthlyExpense(now.year, now.month);
-        final balance = accP.totalBalance;
-        final isPositive = balance >= 0;
+
+        final bankBalance = accP.totalNormalBalance;
+        final ccOutstanding = accP.totalCcOutstanding;
+        final ccAvailable = accP.totalCcAvailable;
 
         return Container(
           decoration: const BoxDecoration(
@@ -230,7 +231,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           child: Stack(
             children: [
-              // Decorative circles
               Positioned(
                 right: -30,
                 top: -20,
@@ -255,12 +255,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
                 child: Column(
                   children: [
-                    // ── કુલ બાકી રકમ label ──
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -271,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(width: 6),
                         const Text(
-                          'કુલ રકમ',
+                          'કુલ બૅન્ક બેલેન્સ',
                           style: TextStyle(
                             color: Colors.white70,
                             fontSize: 13,
@@ -282,28 +280,23 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                     const SizedBox(height: 10),
-
-                    // ── Amount ──
                     RichText(
                       text: TextSpan(
                         children: [
+                          const TextSpan(text: ''),
                           TextSpan(
                             text: cur,
-                            style: TextStyle(
-                              color: isPositive
-                                  ? Colors.white70
-                                  : Colors.red.shade200,
+                            style: const TextStyle(
+                              color: Colors.white70,
                               fontSize: 22,
                               fontWeight: FontWeight.w600,
                               height: 1.6,
                             ),
                           ),
                           TextSpan(
-                            text: _fmt(balance.abs()),
-                            style: TextStyle(
-                              color: isPositive
-                                  ? Colors.white
-                                  : Colors.red.shade200,
+                            text: _fmt(bankBalance),
+                            style: const TextStyle(
+                              color: Colors.white,
                               fontSize: 40,
                               fontWeight: FontWeight.w900,
                               letterSpacing: -1,
@@ -313,37 +306,21 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                     ),
-
-                    // ── ઋણ badge ──
-                    if (!isPositive)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            '⚠️ ઋણ બાકી',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 11,
-                              fontFamily: 'NotoSansGujarati',
-                            ),
-                          ),
-                        ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'બૅન્ક, રોકડ, UPI અને સામાન્ય ખાતાં',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.60),
+                        fontSize: 11,
+                        fontFamily: 'NotoSansGujarati',
                       ),
-
+                    ),
                     const SizedBox(height: 20),
                     Divider(
                       color: Colors.white.withValues(alpha: 0.15),
                       thickness: 1,
                     ),
                     const SizedBox(height: 16),
-
-                    // ── આવક / ખર્ચ pills ──
                     Row(
                       children: [
                         Expanded(
@@ -367,8 +344,31 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _SummaryPill(
+                            label: 'કાર્ડ બાકી',
+                            amount: '$cur${_fmt(ccOutstanding)}',
+                            icon: Icons.credit_card_rounded,
+                            color: Colors.orange.shade300,
+                            bgColor: Colors.orange.withValues(alpha: 0.15),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _SummaryPill(
+                            label: 'ઉપલબ્ધ limit',
+                            amount: '$cur${_fmt(ccAvailable)}',
+                            icon: Icons.local_offer_outlined,
+                            color: Colors.lightGreen.shade300,
+                            bgColor: Colors.lightGreen.withValues(alpha: 0.15),
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 14),
-
                     Text(
                       '${_currentMonthName(now.month)} ${now.year} નો સારાંશ',
                       style: TextStyle(
@@ -387,8 +387,6 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
   }
-
-  // ── Ledger Summary ───────────────────────────────────────────────────────
 
   SliverToBoxAdapter _buildLedgerSummary(BuildContext context) {
     return SliverToBoxAdapter(
@@ -503,8 +501,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Overdue Alert ────────────────────────────────────────────────────────
-
   SliverToBoxAdapter _buildOverdueAlert(BuildContext context) {
     return SliverToBoxAdapter(
       child: Consumer<LoanProvider>(
@@ -523,7 +519,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppColors.warningLight,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                      color: AppColors.warning.withValues(alpha: 0.4)),
+                    color: AppColors.warning.withValues(alpha: 0.4),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -540,7 +537,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
-                    const Icon(Icons.chevron_right, color: AppColors.warning),
+                    const Icon(
+                      Icons.chevron_right,
+                      color: AppColors.warning,
+                    ),
                   ],
                 ),
               ),
@@ -550,8 +550,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-  // ── Recent Transactions ──────────────────────────────────────────────────
 
   SliverToBoxAdapter _buildRecentTransactions(BuildContext context) {
     return SliverToBoxAdapter(
@@ -609,8 +607,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Empty State ──────────────────────────────────────────────────────────
-
   Widget _buildEmptyState(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
@@ -658,8 +654,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-
   String _greeting() {
     final h = DateTime.now().hour;
     if (h < 12) return 'સુ-પ્રભાત 🌅';
@@ -688,8 +682,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String _fmt(double amount) =>
       NumberFormat('#,##,##0.00', 'en_IN').format(amount);
 }
-
-// ── Reusable Widgets ─────────────────────────────────────────────────────────
 
 class _PersonLoanSummaryCard extends StatelessWidget {
   final String name;

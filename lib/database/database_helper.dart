@@ -24,11 +24,7 @@ class DatabaseHelper {
     );
   }
 
-  // ─────────────────────────────────────────────
-  //  Upgrade
-  // ─────────────────────────────────────────────
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // v1 → v2: userId columns
     if (oldVersion < 2) {
       final tables = [
         DbConstants.tAccounts,
@@ -47,7 +43,6 @@ class DatabaseHelper {
       }
     }
 
-    // v2 → v3: custom_category column
     if (oldVersion < 3) {
       try {
         await db.execute(
@@ -57,7 +52,6 @@ class DatabaseHelper {
       } catch (_) {}
     }
 
-    // v3 → v4: credit card columns ← NEW
     if (oldVersion < 4) {
       try {
         await db.execute(
@@ -73,11 +67,41 @@ class DatabaseHelper {
         );
       } catch (_) {}
     }
+
+    // v4 → v5: transaction schema expansion
+    if (oldVersion < 5) {
+      try {
+        await db.execute(
+          'ALTER TABLE ${DbConstants.tTransactions} ADD COLUMN subtitle TEXT',
+        );
+      } catch (_) {}
+
+      try {
+        await db.execute(
+          'ALTER TABLE ${DbConstants.tTransactions} ADD COLUMN category_id TEXT',
+        );
+      } catch (_) {}
+
+      try {
+        await db.execute(
+          'ALTER TABLE ${DbConstants.tTransactions} ADD COLUMN category_name TEXT DEFAULT "કેટેગરી"',
+        );
+      } catch (_) {}
+
+      try {
+        await db.execute(
+          'ALTER TABLE ${DbConstants.tTransactions} ADD COLUMN category_emoji TEXT DEFAULT "📁"',
+        );
+      } catch (_) {}
+
+      try {
+        await db.execute(
+          'ALTER TABLE ${DbConstants.tTransactions} ADD COLUMN linked_credit_card_account_id TEXT',
+        );
+      } catch (_) {}
+    }
   }
 
-  // ─────────────────────────────────────────────
-  //  Create
-  // ─────────────────────────────────────────────
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE ${DbConstants.tAccounts} (
@@ -98,18 +122,24 @@ class DatabaseHelper {
 
     await db.execute('''
       CREATE TABLE ${DbConstants.tTransactions} (
-        ${DbConstants.cId}                 TEXT PRIMARY KEY,
-        ${DbConstants.cUserId}             TEXT NOT NULL,
-        ${DbConstants.cTxnTitle}           TEXT NOT NULL,
-        ${DbConstants.cTxnAmount}          REAL NOT NULL,
-        ${DbConstants.cTxnType}            TEXT NOT NULL,
-        ${DbConstants.cTxnCategory}        TEXT NOT NULL,
-        ${DbConstants.cTxnCustomCategory}  TEXT,
-        ${DbConstants.cTxnAccId}           TEXT NOT NULL,
-        ${DbConstants.cTxnDate}            TEXT NOT NULL,
-        ${DbConstants.cTxnNote}            TEXT,
-        ${DbConstants.cCreatedAt}          TEXT NOT NULL,
+        ${DbConstants.cId}                            TEXT PRIMARY KEY,
+        ${DbConstants.cUserId}                        TEXT NOT NULL,
+        ${DbConstants.cTxnTitle}                      TEXT NOT NULL,
+        subtitle                                      TEXT,
+        ${DbConstants.cTxnAmount}                     REAL NOT NULL,
+        ${DbConstants.cTxnType}                       TEXT NOT NULL,
+        category_id                                   TEXT,
+        category_name                                 TEXT NOT NULL DEFAULT 'કેટેગરી',
+        category_emoji                                TEXT NOT NULL DEFAULT '📁',
+        ${DbConstants.cTxnCustomCategory}             TEXT,
+        ${DbConstants.cTxnAccId}                      TEXT NOT NULL,
+        linked_credit_card_account_id                 TEXT,
+        ${DbConstants.cTxnDate}                       TEXT NOT NULL,
+        ${DbConstants.cTxnNote}                       TEXT,
+        ${DbConstants.cCreatedAt}                     TEXT NOT NULL,
         FOREIGN KEY (${DbConstants.cTxnAccId})
+          REFERENCES ${DbConstants.tAccounts}(${DbConstants.cId}),
+        FOREIGN KEY (linked_credit_card_account_id)
           REFERENCES ${DbConstants.tAccounts}(${DbConstants.cId})
       )
     ''');
@@ -176,9 +206,6 @@ class DatabaseHelper {
     await _insertDefaults(db);
   }
 
-  // ─────────────────────────────────────────────
-  //  Defaults
-  // ─────────────────────────────────────────────
   Future<void> _insertDefaults(Database db) async {
     final now = DateTime.now().toIso8601String();
 
@@ -192,8 +219,8 @@ class DatabaseHelper {
         DbConstants.cAccColor: '#01696F',
         DbConstants.cAccIcon: '💵',
         DbConstants.cAccIsActive: 1,
-        DbConstants.cAccCreditLimit: 0.0, // ← NEW
-        DbConstants.cAccOutstandingAmt: 0.0, // ← NEW
+        DbConstants.cAccCreditLimit: 0.0,
+        DbConstants.cAccOutstandingAmt: 0.0,
         DbConstants.cCreatedAt: now,
         DbConstants.cUpdatedAt: now,
       },
@@ -253,9 +280,6 @@ class DatabaseHelper {
     }
   }
 
-  // ─────────────────────────────────────────────
-  //  CRUD helpers
-  // ─────────────────────────────────────────────
   Future<int> insert(String table, Map<String, dynamic> data) async {
     final db = await database;
     return db.insert(table, data, conflictAlgorithm: ConflictAlgorithm.replace);

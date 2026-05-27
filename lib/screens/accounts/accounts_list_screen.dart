@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+
 import '../../core/app_colors.dart';
 import '../../models/account_model.dart';
 import '../../providers/account_provider.dart';
@@ -38,7 +39,6 @@ class AccountsListScreen extends StatelessWidget {
             return _buildEmptyState(ctx);
           }
 
-          // ── Dynamic Group by AccountType (all types auto-included) ──
           final grouped = {
             for (final type in AccountType.values)
               type: accounts.where((a) => a.type == type).toList(),
@@ -47,10 +47,8 @@ class AccountsListScreen extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // ── Total Balance Card ──
-              _buildTotalCard(ctx, provider.totalBalance, cur),
+              _buildSummaryCards(ctx, provider, cur),
               const SizedBox(height: 20),
-
               for (final type in AccountType.values)
                 if (grouped[type]!.isNotEmpty) ...[
                   _GroupHeader(
@@ -63,7 +61,6 @@ class AccountsListScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                 ],
-
               const SizedBox(height: 80),
             ],
           );
@@ -72,15 +69,62 @@ class AccountsListScreen extends StatelessWidget {
     );
   }
 
-  // ─────────────────────────────────────────────
-  //  Total Balance Card
-  // ─────────────────────────────────────────────
-  Widget _buildTotalCard(BuildContext context, double total, String cur) {
+  Widget _buildSummaryCards(
+    BuildContext context,
+    AccountProvider provider,
+    String cur,
+  ) {
+    return Column(
+      children: [
+        _buildMainSummaryCard(
+          context,
+          title: 'કુલ બૅન્ક બેલેન્સ',
+          value: '$cur${_fmt(provider.totalNormalBalance)}',
+          subtitle: 'બૅન્ક, રોકડ, UPI અને અન્ય સામાન્ય ખાતાં',
+          icon: '🏦',
+          colors: const [AppColors.primary, AppColors.primaryDark],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMiniSummaryCard(
+                context,
+                title: 'કુલ કાર્ડ બાકી',
+                value: '$cur${_fmt(provider.totalCcOutstanding)}',
+                icon: '💳',
+                color: AppColors.expense,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMiniSummaryCard(
+                context,
+                title: 'ઉપલબ્ધ limit',
+                value: '$cur${_fmt(provider.totalCcAvailable)}',
+                icon: '🏷️',
+                color: AppColors.income,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMainSummaryCard(
+    BuildContext context, {
+    required String title,
+    required String value,
+    required String subtitle,
+    required String icon,
+    required List<Color> colors,
+  }) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.primary, AppColors.primaryDark],
+        gradient: LinearGradient(
+          colors: colors,
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -88,15 +132,15 @@ class AccountsListScreen extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Text('🏦', style: TextStyle(fontSize: 32)),
+          Text(icon, style: const TextStyle(fontSize: 32)),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'કુલ રકમ',
-                  style: TextStyle(
+                Text(
+                  title,
+                  style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
                     fontFamily: 'NotoSansGujarati',
@@ -104,12 +148,21 @@ class AccountsListScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$cur${_fmt(total)}',
+                  value,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 28,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontFamily: 'NotoSansGujarati',
                   ),
                 ),
               ],
@@ -120,9 +173,48 @@ class AccountsListScreen extends StatelessWidget {
     );
   }
 
-  // ─────────────────────────────────────────────
-  //  Account Tile
-  // ─────────────────────────────────────────────
+  Widget _buildMiniSummaryCard(
+    BuildContext context, {
+    required String title,
+    required String value,
+    required String icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 22)),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontFamily: 'NotoSansGujarati',
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAccountTile(
     BuildContext context,
     AccountModel acc,
@@ -136,22 +228,29 @@ class AccountsListScreen extends StatelessWidget {
       accColor = AppColors.primary;
     }
 
+    final isCc = acc.isCreditCard;
+    final mainAmount = isCc ? acc.outstandingAmount : acc.balance;
+    final mainLabel = isCc ? 'બાકી' : 'બેલેન્સ';
+
+    final secondaryText = isCc
+        ? 'Limit $cur${_fmt(acc.creditLimit)}  •  ઉપલબ્ધ $cur${_fmt(acc.availableLimit < 0 ? 0 : acc.availableLimit)}'
+        : acc.type.label;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: accColor.withValues(alpha: 0.06),
+        color: accColor.withOpacity(0.06),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: accColor.withValues(alpha: 0.2)),
+        border: Border.all(color: accColor.withOpacity(0.20)),
       ),
       child: Row(
         children: [
-          // ── Icon ──
           Container(
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: accColor.withValues(alpha: 0.12),
+              color: accColor.withOpacity(0.12),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
@@ -162,8 +261,6 @@ class AccountsListScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-
-          // ── Name, Balance, Type ──
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -179,55 +276,50 @@ class AccountsListScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '$cur${_fmt(acc.balance)}',
+                  '$mainLabel: $cur${_fmt(mainAmount)}',
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface,
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
-                  acc.type.label,
+                  secondaryText,
                   style: TextStyle(
-                    color: accColor.withValues(alpha: 0.6),
-                    fontSize: 10,
+                    color: accColor.withOpacity(0.70),
+                    fontSize: 10.5,
                     fontFamily: 'NotoSansGujarati',
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
-
-          // ── Edit ──
           IconButton(
-            onPressed: () => _showEditSheet(context, acc, provider),
+            onPressed: () => _goToEditAccount(context, acc),
             icon: Icon(
               Icons.edit_rounded,
-              color: accColor.withValues(alpha: 0.8),
+              color: accColor.withOpacity(0.80),
               size: 20,
             ),
-            tooltip: 'Edit',
+            tooltip: 'ફેરફાર કરો',
           ),
-
-          // ── Delete ──
           IconButton(
             onPressed: () =>
                 _confirmDelete(context, provider, acc.id, acc.name),
             icon: Icon(
               Icons.delete_rounded,
-              color: AppColors.expense.withValues(alpha: 0.8),
+              color: AppColors.expense.withOpacity(0.80),
               size: 20,
             ),
-            tooltip: 'Delete',
+            tooltip: 'ભૂંસો',
           ),
         ],
       ),
     );
   }
 
-  // ─────────────────────────────────────────────
-  //  Empty State
-  // ─────────────────────────────────────────────
   Widget _buildEmptyState(BuildContext context) {
     return Center(
       child: Column(
@@ -270,7 +362,8 @@ class AccountsListScreen extends StatelessWidget {
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             icon: const Icon(Icons.add_rounded),
             label: const Text(
@@ -283,130 +376,6 @@ class AccountsListScreen extends StatelessWidget {
     );
   }
 
-  // ─────────────────────────────────────────────
-  //  Edit Bottom Sheet
-  // ─────────────────────────────────────────────
-  void _showEditSheet(
-    BuildContext context,
-    AccountModel acc,
-    AccountProvider provider,
-  ) {
-    final nameCtrl = TextEditingController(text: acc.name);
-    final balanceCtrl =
-        TextEditingController(text: acc.balance.toStringAsFixed(2));
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom,
-          left: 16,
-          right: 16,
-          top: 16,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Handle
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.borderLight,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '${acc.icon} ખાતું Edit',
-              style: const TextStyle(
-                fontFamily: 'NotoSansGujarati',
-                fontWeight: FontWeight.w800,
-                fontSize: 16,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Name
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'ખાતાનું નામ',
-                labelStyle: TextStyle(fontFamily: 'NotoSansGujarati'),
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.account_balance_rounded),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Balance
-            TextField(
-              controller: balanceCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'બાકી રકમ',
-                labelStyle: TextStyle(fontFamily: 'NotoSansGujarati'),
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.currency_rupee_rounded),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Save
-            ElevatedButton(
-              onPressed: () {
-                final newName = nameCtrl.text.trim();
-                final newBalance =
-                    double.tryParse(balanceCtrl.text) ?? acc.balance;
-                if (newName.isEmpty) return;
-
-                final updated = acc.copyWith(
-                  name: newName,
-                  balance: newBalance,
-                );
-                provider.updateAccount(updated);
-                Navigator.pop(ctx);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'ખાતું update થઈ ગયું ✅',
-                      style: TextStyle(fontFamily: 'NotoSansGujarati'),
-                    ),
-                    backgroundColor: AppColors.income,
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 48),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              child: const Text(
-                'સાચવો',
-                style: TextStyle(
-                  fontFamily: 'NotoSansGujarati',
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ─────────────────────────────────────────────
-  //  Delete Confirmation
-  // ─────────────────────────────────────────────
   Future<void> _confirmDelete(
     BuildContext context,
     AccountProvider provider,
@@ -416,7 +385,9 @@ class AccountsListScreen extends StatelessWidget {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
         title: const Text(
           '🗑️ ખાતું ભૂંસો?',
           style: TextStyle(fontFamily: 'NotoSansGujarati'),
@@ -431,7 +402,10 @@ class AccountsListScreen extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: const Text(
+              'રદ કરો',
+              style: TextStyle(fontFamily: 'NotoSansGujarati'),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -439,7 +413,8 @@ class AccountsListScreen extends StatelessWidget {
               backgroundColor: AppColors.expense,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             child: const Text(
               'ભૂંસો',
@@ -466,9 +441,6 @@ class AccountsListScreen extends StatelessWidget {
     }
   }
 
-  // ─────────────────────────────────────────────
-  //  Navigate to AddAccountScreen
-  // ─────────────────────────────────────────────
   void _goToAddAccount(BuildContext context) {
     Navigator.push(
       context,
@@ -478,20 +450,29 @@ class AccountsListScreen extends StatelessWidget {
     });
   }
 
-  // ─────────────────────────────────────────────
-  //  Format Amount
-  // ─────────────────────────────────────────────
+  void _goToEditAccount(BuildContext context, AccountModel acc) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddAccountScreen(existing: acc),
+      ),
+    ).then((_) {
+      context.read<AccountProvider>().loadAccounts();
+    });
+  }
+
   String _fmt(double amount) =>
       NumberFormat('#,##,##0.00', 'en_IN').format(amount.abs());
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Group Header Widget
-// ─────────────────────────────────────────────────────────────
 class _GroupHeader extends StatelessWidget {
   final String icon;
   final String title;
-  const _GroupHeader({required this.icon, required this.title});
+
+  const _GroupHeader({
+    required this.icon,
+    required this.title,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -511,7 +492,7 @@ class _GroupHeader extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           child: Divider(
-            color: AppColors.primary.withValues(alpha: 0.2),
+            color: AppColors.primary.withOpacity(0.2),
             thickness: 1,
           ),
         ),

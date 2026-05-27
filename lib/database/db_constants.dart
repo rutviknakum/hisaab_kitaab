@@ -2,7 +2,7 @@ class DbConstants {
   DbConstants._();
 
   static const String dbName = 'hisaab_kitaab.db';
-  static const int dbVersion = 4;
+  static const int dbVersion = 5;
 
   // ── Table Names ───────────────────────────────
   static const String tAccounts = 'accounts';
@@ -20,7 +20,7 @@ class DbConstants {
   static const String cCreatedAt = 'created_at';
   static const String cUpdatedAt = 'updated_at';
 
-// ── Accounts ──────────────────────────────────
+  // ── Accounts ──────────────────────────────────
   static const String cAccName = 'name';
   static const String cAccType = 'type';
   static const String cAccBalance = 'balance';
@@ -34,9 +34,18 @@ class DbConstants {
   static const String cTxnTitle = 'title';
   static const String cTxnAmount = 'amount';
   static const String cTxnType = 'type';
+
+  // old legacy field (keep temporarily if old code still references it)
   static const String cTxnCategory = 'category';
+
+  static const String cTxnCategoryId = 'category_id';
+  static const String cTxnCategoryName = 'category_name';
+  static const String cTxnCategoryEmoji = 'category_emoji';
+  static const String cTxnSubtitle = 'subtitle';
   static const String cTxnCustomCategory = 'custom_category';
   static const String cTxnAccId = 'account_id';
+  static const String cTxnLinkedCreditCardAccountId =
+      'linked_credit_card_account_id';
   static const String cTxnDate = 'date';
   static const String cTxnNote = 'note';
 

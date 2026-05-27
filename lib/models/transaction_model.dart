@@ -27,10 +27,14 @@ class TransactionModel {
   final String? subtitle;
   final double amount;
   final TransactionType type;
-  final String categoryId;
+
+  final String? categoryId;
   final String categoryName;
   final String categoryEmoji;
+
   final String accountId;
+  final String? linkedCreditCardAccountId;
+
   final DateTime date;
   final String? note;
   final DateTime createdAt;
@@ -42,10 +46,11 @@ class TransactionModel {
     this.subtitle,
     required this.amount,
     required this.type,
-    required this.categoryId,
+    this.categoryId,
     required this.categoryName,
     required this.categoryEmoji,
     required this.accountId,
+    this.linkedCreditCardAccountId,
     required this.date,
     this.note,
     DateTime? createdAt,
@@ -69,6 +74,7 @@ class TransactionModel {
     String? categoryName,
     String? categoryEmoji,
     String? accountId,
+    String? linkedCreditCardAccountId,
     DateTime? date,
     String? note,
   }) {
@@ -83,6 +89,8 @@ class TransactionModel {
       categoryName: categoryName ?? this.categoryName,
       categoryEmoji: categoryEmoji ?? this.categoryEmoji,
       accountId: accountId ?? this.accountId,
+      linkedCreditCardAccountId:
+          linkedCreditCardAccountId ?? this.linkedCreditCardAccountId,
       date: date ?? this.date,
       note: note ?? this.note,
       createdAt: createdAt,
@@ -93,13 +101,14 @@ class TransactionModel {
         DbConstants.cId: id,
         DbConstants.cUserId: userId,
         DbConstants.cTxnTitle: title,
-        'subtitle': subtitle,
+        DbConstants.cTxnSubtitle: subtitle,
         DbConstants.cTxnAmount: amount,
         DbConstants.cTxnType: type.name,
-        'category_id': categoryId,
-        'category_name': categoryName,
-        'category_emoji': categoryEmoji,
+        DbConstants.cTxnCategoryId: categoryId,
+        DbConstants.cTxnCategoryName: categoryName,
+        DbConstants.cTxnCategoryEmoji: categoryEmoji,
         DbConstants.cTxnAccId: accountId,
+        DbConstants.cTxnLinkedCreditCardAccountId: linkedCreditCardAccountId,
         DbConstants.cTxnDate: date.toIso8601String(),
         DbConstants.cTxnNote: note,
         DbConstants.cCreatedAt: createdAt.toIso8601String(),
@@ -108,17 +117,24 @@ class TransactionModel {
   factory TransactionModel.fromMap(Map<String, dynamic> map) {
     final rawType = (map[DbConstants.cTxnType] ?? 'expense').toString();
 
+    final rawLinkedCc =
+        map[DbConstants.cTxnLinkedCreditCardAccountId]?.toString();
+
     return TransactionModel(
       id: map[DbConstants.cId],
       userId: map[DbConstants.cUserId] ?? '',
       title: map[DbConstants.cTxnTitle] ?? '',
-      subtitle: map['subtitle'],
+      subtitle: map[DbConstants.cTxnSubtitle],
       amount: ((map[DbConstants.cTxnAmount] ?? 0) as num).toDouble(),
       type: _parseTransactionType(rawType),
-      categoryId: map['category_id'] ?? '',
-      categoryName: map['category_name'] ?? 'કેટેગરી',
-      categoryEmoji: map['category_emoji'] ?? '📁',
+      categoryId: map[DbConstants.cTxnCategoryId],
+      categoryName: map[DbConstants.cTxnCategoryName] ?? 'કેટેગરી',
+      categoryEmoji: map[DbConstants.cTxnCategoryEmoji] ?? '📁',
       accountId: map[DbConstants.cTxnAccId] ?? '',
+      linkedCreditCardAccountId:
+          (rawLinkedCc == null || rawLinkedCc.trim().isEmpty)
+              ? null
+              : rawLinkedCc,
       date: DateTime.parse(map[DbConstants.cTxnDate]),
       note: map[DbConstants.cTxnNote],
       createdAt: DateTime.parse(map[DbConstants.cCreatedAt]),

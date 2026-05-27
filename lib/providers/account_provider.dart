@@ -18,25 +18,25 @@ class AccountProvider with ChangeNotifier {
   List<AccountModel> get creditCardAccounts =>
       _accounts.where((a) => a.isActive && a.isCreditCard).toList();
 
-  double get totalBalance {
-    final normalTotal = _accounts
-        .where((a) => !a.isCreditCard)
-        .fold(0.0, (sum, a) => sum + a.balance);
+  double get totalNormalBalance => normalAccounts.fold(
+        0.0,
+        (sum, a) => sum + a.balance,
+      );
 
-    final ccOutstanding = _accounts
-        .where((a) => a.isCreditCard)
-        .fold(0.0, (sum, a) => sum + a.outstandingAmount);
+  double get totalCcOutstanding => creditCardAccounts.fold(
+        0.0,
+        (sum, a) => sum + a.outstandingAmount,
+      );
 
-    return normalTotal - ccOutstanding;
-  }
+  double get totalCcLimit => creditCardAccounts.fold(
+        0.0,
+        (sum, a) => sum + a.creditLimit,
+      );
 
-  double get totalCcOutstanding => _accounts
-      .where((a) => a.isCreditCard)
-      .fold(0.0, (sum, a) => sum + a.outstandingAmount);
-
-  double get totalCcLimit => _accounts
-      .where((a) => a.isCreditCard)
-      .fold(0.0, (sum, a) => sum + a.creditLimit);
+  double get totalCcAvailable => creditCardAccounts.fold(
+        0.0,
+        (sum, a) => sum + a.availableLimit,
+      );
 
   String? get _currentUserId => supabase.auth.currentUser?.id;
 
@@ -69,7 +69,7 @@ class AccountProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> refresh() async => await loadAccounts();
+  Future<void> refresh() async => loadAccounts();
 
   Future<void> addAccount(AccountModel account) async {
     final userId = _currentUserId;
@@ -88,14 +88,22 @@ class AccountProvider with ChangeNotifier {
 
     final updated = account.copyWith(userId: userId);
 
+    final map = Map<String, dynamic>.from(updated.toMap());
+    map.remove(DbConstants.cId);
+    map.remove(DbConstants.cUserId);
+    map.remove(DbConstants.cCreatedAt);
+
     await supabase
         .from(DbConstants.tAccounts)
-        .update(updated.toMap())
+        .update(map)
         .eq(DbConstants.cId, updated.id)
         .eq(DbConstants.cUserId, userId);
 
     final idx = _accounts.indexWhere((a) => a.id == updated.id);
-    if (idx != -1) _accounts[idx] = updated;
+    if (idx != -1) {
+      _accounts[idx] = updated;
+    }
+
     notifyListeners();
   }
 
@@ -103,65 +111,100 @@ class AccountProvider with ChangeNotifier {
     final userId = _currentUserId;
     if (userId == null) throw Exception('User not logged in');
 
+    if (_accounts.isEmpty) {
+      await loadAccounts();
+    }
+
     final txnMaps = await supabase
         .from(DbConstants.tTransactions)
         .select()
-        .eq(DbConstants.cUserId, userId);
+        .eq(DbConstants.cUserId, userId)
+        .order(DbConstants.cTxnDate, ascending: true)
+        .order(DbConstants.cCreatedAt, ascending: true);
 
     final transactions = (txnMaps as List)
         .map((e) => TransactionModel.fromMap(Map<String, dynamic>.from(e)))
         .toList();
 
+    final currentAccounts = List<AccountModel>.from(_accounts);
+
     final Map<String, double> balances = {
-      for (final acc in _accounts.where((a) => !a.isCreditCard)) acc.id: 0.0,
+      for (final acc in currentAccounts.where((a) => !a.isCreditCard))
+        acc.id: 0.0,
     };
 
     final Map<String, double> outstandings = {
-      for (final acc in _accounts.where((a) => a.isCreditCard)) acc.id: 0.0,
+      for (final acc in currentAccounts.where((a) => a.isCreditCard))
+        acc.id: 0.0,
     };
 
     for (final txn in transactions) {
-      final acc = getById(txn.accountId);
-      if (acc == null) continue;
+      final sourceAcc = currentAccounts
+          .cast<AccountModel?>()
+          .firstWhere((a) => a?.id == txn.accountId, orElse: () => null);
 
-      if (acc.isCreditCard) {
-        if (txn.type == TransactionType.expense) {
-          outstandings[txn.accountId] =
-              (outstandings[txn.accountId] ?? 0) + txn.amount;
-        }
-      } else {
-        final current = balances[txn.accountId] ?? 0.0;
-        if (txn.type == TransactionType.income) {
-          balances[txn.accountId] = current + txn.amount;
-        } else if (txn.type == TransactionType.expense ||
-            txn.type == TransactionType.ccPayment) {
-          balances[txn.accountId] = current - txn.amount;
-        }
-      }
+      switch (txn.type) {
+        case TransactionType.income:
+          if (sourceAcc != null && !sourceAcc.isCreditCard) {
+            balances[txn.accountId] =
+                (balances[txn.accountId] ?? 0.0) + txn.amount;
+          }
+          break;
 
-      if (txn.type == TransactionType.ccPayment) {
-        final ccId =
-            txn.categoryId == 'cc_bill_payment' ? txn.accountId : txn.accountId;
-        final ccAcc = getById(ccId);
-        if (ccAcc != null && ccAcc.isCreditCard) {
-          outstandings[ccId] = (outstandings[ccId] ?? 0.0) - txn.amount;
-        }
+        case TransactionType.expense:
+          if (sourceAcc == null) break;
+
+          if (sourceAcc.isCreditCard) {
+            outstandings[txn.accountId] =
+                (outstandings[txn.accountId] ?? 0.0) + txn.amount;
+          } else {
+            balances[txn.accountId] =
+                (balances[txn.accountId] ?? 0.0) - txn.amount;
+          }
+          break;
+
+        case TransactionType.ccPayment:
+          if (sourceAcc != null && !sourceAcc.isCreditCard) {
+            balances[txn.accountId] =
+                (balances[txn.accountId] ?? 0.0) - txn.amount;
+          }
+
+          final linkedCcId = txn.linkedCreditCardAccountId;
+          if (linkedCcId != null && linkedCcId.isNotEmpty) {
+            final ccAcc = currentAccounts
+                .cast<AccountModel?>()
+                .firstWhere((a) => a?.id == linkedCcId, orElse: () => null);
+
+            if (ccAcc != null && ccAcc.isCreditCard) {
+              final updatedOutstanding =
+                  (outstandings[linkedCcId] ?? 0.0) - txn.amount;
+              outstandings[linkedCcId] =
+                  updatedOutstanding < 0 ? 0.0 : updatedOutstanding;
+            }
+          }
+          break;
       }
     }
 
-    for (final acc in _accounts.where((a) => !a.isCreditCard)) {
+    for (final acc in currentAccounts.where((a) => !a.isCreditCard)) {
+      final newBalance = balances[acc.id] ?? 0.0;
+
       await supabase
           .from(DbConstants.tAccounts)
-          .update({DbConstants.cAccBalance: balances[acc.id] ?? 0.0})
+          .update({
+            DbConstants.cAccBalance: newBalance,
+          })
           .eq(DbConstants.cId, acc.id)
           .eq(DbConstants.cUserId, userId);
     }
 
-    for (final acc in _accounts.where((a) => a.isCreditCard)) {
+    for (final acc in currentAccounts.where((a) => a.isCreditCard)) {
+      final newOutstanding = outstandings[acc.id] ?? 0.0;
+
       await supabase
           .from(DbConstants.tAccounts)
           .update({
-            DbConstants.cAccOutstandingAmt: outstandings[acc.id] ?? 0.0,
+            DbConstants.cAccOutstandingAmt: newOutstanding,
           })
           .eq(DbConstants.cId, acc.id)
           .eq(DbConstants.cUserId, userId);

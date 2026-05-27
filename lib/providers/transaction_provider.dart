@@ -62,6 +62,7 @@ class TransactionProvider with ChangeNotifier {
           category_name,
           category_emoji,
           account_id,
+          linked_credit_card_account_id,
           date,
           note,
           created_at
@@ -81,7 +82,9 @@ class TransactionProvider with ChangeNotifier {
     if (userId == null) throw Exception('User not logged in');
 
     final newTxn = txn.copyWith(userId: userId);
-    await supabase.from(DbConstants.tTransactions).insert(newTxn.toMap());
+    final map = Map<String, dynamic>.from(newTxn.toMap());
+
+    await supabase.from(DbConstants.tTransactions).insert(map);
 
     _transactions.insert(0, newTxn);
     notifyListeners();

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/app_colors.dart';
+import '../../main.dart';
 import '../../models/account_model.dart';
 import '../../models/app_category_model.dart';
 import '../../models/transaction_model.dart';
@@ -11,7 +12,6 @@ import '../../providers/account_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/transaction_provider.dart';
-import '../../main.dart';
 
 class AddTransactionScreen extends StatefulWidget {
   final TransactionModel? existing;
@@ -35,131 +35,180 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
   final _noteCtrl = TextEditingController();
 
   late final TabController _typeTab;
+
   TransactionType _type = TransactionType.expense;
   AppCategoryModel? _selectedCategory;
+
   String? _accountId;
   String? _paymentFromAccountId;
   String? _creditCardAccountId;
+
+  bool _isExpenseFromCreditCard = false;
+
   DateTime _date = DateTime.now();
   bool _saving = false;
 
   bool get _isEdit => widget.existing != null;
   bool get _isIncome => _type == TransactionType.income;
-  bool get _isExpense => _type == TransactionType.expense;
   bool get _isCcPayment => _type == TransactionType.ccPayment;
+  bool get _isExpense => _type == TransactionType.expense;
 
-  List<AppCategoryModel> get _categories {
-    if (_isCcPayment) return [];
-    final type = _type == TransactionType.income ? 'income' : 'expense';
-    return context.watch<CategoryProvider>().byType(type);
+  List<AccountModel> get _allAccountsRead =>
+      context.read<AccountProvider>().activeAccounts;
+
+  List<AccountModel> get _normalAccountsRead =>
+      _allAccountsRead.where((a) => !a.isCreditCard).toList();
+
+  List<AccountModel> get _creditCardAccountsRead =>
+      _allAccountsRead.where((a) => a.isCreditCard).toList();
+
+  List<AccountModel> get _expenseAccountsRead {
+    if (_isExpenseFromCreditCard) return _creditCardAccountsRead;
+    return _normalAccountsRead;
   }
 
-  List<AccountModel> get _allAccounts =>
-      context.watch<AccountProvider>().activeAccounts;
-
-  List<AccountModel> get _normalAccounts =>
-      _allAccounts.where((a) => !a.isCreditCard).toList();
-
-  List<AccountModel> get _creditCardAccounts =>
-      _allAccounts.where((a) => a.isCreditCard).toList();
+  List<AppCategoryModel> _categoriesRead() {
+    if (_isCcPayment) return [];
+    final type = _isIncome ? 'income' : 'expense';
+    return context.read<CategoryProvider>().byType(type);
+  }
 
   @override
   void initState() {
     super.initState();
 
     _typeTab = TabController(length: 3, vsync: this);
-    _typeTab.addListener(() {
-      if (_typeTab.indexIsChanging) return;
-      setState(() {
-        _type = _typeTab.index == 0
-            ? TransactionType.income
-            : _typeTab.index == 1
-                ? TransactionType.expense
-                : TransactionType.ccPayment;
-        _selectedCategory = null;
-        if (_isCcPayment) {
-          _accountId = null;
-          _paymentFromAccountId =
-              _normalAccounts.isNotEmpty ? _normalAccounts.first.id : null;
-          _creditCardAccountId = _creditCardAccounts.isNotEmpty
-              ? _creditCardAccounts.first.id
-              : null;
-        } else {
-          _paymentFromAccountId = null;
-          _creditCardAccountId = null;
-          _accountId = _allAccounts.isNotEmpty ? _allAccounts.first.id : null;
-        }
-      });
-    });
+    _typeTab.addListener(_onTabChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await context.read<CategoryProvider>().loadCategories();
       await context.read<AccountProvider>().loadAccounts();
       if (!mounted) return;
 
-      if (_isEdit) {
-        final t = widget.existing!;
-        _titleCtrl.text = t.title;
-        _amountCtrl.text = t.amount.toStringAsFixed(2);
-        _noteCtrl.text = t.note ?? '';
-        _type = t.type;
-        _date = t.date;
+      final txn = widget.existing;
 
-        _typeTab.index = _type == TransactionType.income
-            ? 0
-            : _type == TransactionType.expense
-                ? 1
-                : 2;
+      if (txn != null) {
+        _titleCtrl.text = txn.title;
+        _amountCtrl.text = txn.amount.toStringAsFixed(2);
+        _noteCtrl.text = txn.note ?? '';
+        _type = txn.type;
+        _date = txn.date;
+
+        _setTabWithoutTrigger(_tabIndexFromType(_type));
 
         if (_isCcPayment) {
-          _paymentFromAccountId = t.accountId;
-          _creditCardAccountId = _creditCardAccounts.isNotEmpty
-              ? _creditCardAccounts.first.id
-              : null;
+          _paymentFromAccountId = txn.accountId;
+          _creditCardAccountId = txn.linkedCreditCardAccountId ??
+              (_creditCardAccountsRead.isNotEmpty
+                  ? _creditCardAccountsRead.first.id
+                  : null);
         } else {
-          _accountId = t.accountId;
+          _accountId = txn.accountId;
+          final selectedAccount = _allAccountsRead
+              .where((a) => a.id == txn.accountId)
+              .cast<AccountModel?>()
+              .firstWhere((a) => a != null, orElse: () => null);
+
+          _isExpenseFromCreditCard = txn.type == TransactionType.expense &&
+              (selectedAccount?.isCreditCard ?? false);
+
+          final cats = _categoriesRead();
           try {
-            _selectedCategory =
-                _categories.firstWhere((c) => c.id == t.categoryId);
+            _selectedCategory = cats.firstWhere((c) => c.id == txn.categoryId);
           } catch (_) {
             _selectedCategory = AppCategoryModel(
-              id: t.categoryId,
-              userId: t.userId,
-              name: t.categoryName,
-              emoji: t.categoryEmoji,
-              type: t.type == TransactionType.income ? 'income' : 'expense',
+              id: txn.categoryId ?? '',
+              userId: txn.userId,
+              name: txn.categoryName,
+              emoji: txn.categoryEmoji,
+              type: txn.type == TransactionType.income ? 'income' : 'expense',
               isDefault: false,
               isDeleted: false,
-              createdAt: t.createdAt,
-              updatedAt: t.createdAt,
+              createdAt: txn.createdAt,
+              updatedAt: txn.createdAt,
             );
           }
         }
       } else {
         _type = widget.initialType ?? TransactionType.expense;
-        _typeTab.index = _type == TransactionType.income
-            ? 0
-            : _type == TransactionType.expense
-                ? 1
-                : 2;
-
-        if (_isCcPayment) {
-          _paymentFromAccountId =
-              _normalAccounts.isNotEmpty ? _normalAccounts.first.id : null;
-          _creditCardAccountId = _creditCardAccounts.isNotEmpty
-              ? _creditCardAccounts.first.id
-              : null;
-        } else {
-          _accountId = _allAccounts.isNotEmpty ? _allAccounts.first.id : null;
-        }
+        _setTabWithoutTrigger(_tabIndexFromType(_type));
+        _applyDefaultsForType();
       }
 
       if (mounted) setState(() {});
     });
   }
 
+  int _tabIndexFromType(TransactionType type) {
+    switch (type) {
+      case TransactionType.income:
+        return 0;
+      case TransactionType.expense:
+        return 1;
+      case TransactionType.ccPayment:
+        return 2;
+    }
+  }
+
+  void _setTabWithoutTrigger(int index) {
+    _typeTab.removeListener(_onTabChanged);
+    _typeTab.index = index;
+    _typeTab.addListener(_onTabChanged);
+  }
+
+  void _applyDefaultsForType() {
+    if (_isCcPayment) {
+      _accountId = null;
+      _selectedCategory = null;
+      _paymentFromAccountId =
+          _normalAccountsRead.isNotEmpty ? _normalAccountsRead.first.id : null;
+      _creditCardAccountId = _creditCardAccountsRead.isNotEmpty
+          ? _creditCardAccountsRead.first.id
+          : null;
+    } else {
+      _paymentFromAccountId = null;
+      _creditCardAccountId = null;
+
+      if (_isIncome) {
+        _isExpenseFromCreditCard = false;
+        _accountId = _normalAccountsRead.isNotEmpty
+            ? _normalAccountsRead.first.id
+            : null;
+      } else if (_isExpense) {
+        final expenseAccounts = _expenseAccountsRead;
+        _accountId =
+            expenseAccounts.isNotEmpty ? expenseAccounts.first.id : null;
+      }
+
+      final cats = _categoriesRead();
+      if (cats.isNotEmpty) {
+        _selectedCategory ??= cats.first;
+      }
+    }
+  }
+
+  void _onTabChanged() {
+    if (_typeTab.indexIsChanging) return;
+
+    setState(() {
+      _type = _typeTab.index == 0
+          ? TransactionType.income
+          : _typeTab.index == 1
+              ? TransactionType.expense
+              : TransactionType.ccPayment;
+
+      if (_isIncome || _isCcPayment) {
+        _isExpenseFromCreditCard = false;
+      }
+
+      _selectedCategory = null;
+      _applyDefaultsForType();
+    });
+  }
+
   @override
   void dispose() {
+    _typeTab.removeListener(_onTabChanged);
     _typeTab.dispose();
     _titleCtrl.dispose();
     _amountCtrl.dispose();
@@ -181,7 +230,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
         child: child!,
       ),
     );
-    if (picked != null) setState(() => _date = picked);
+
+    if (picked != null) {
+      setState(() => _date = picked);
+    }
   }
 
   Future<void> _save() async {
@@ -234,10 +286,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                   : _titleCtrl.text.trim(),
               amount: amount,
               type: TransactionType.ccPayment,
-              categoryId: 'cc_bill_payment',
+              categoryId: null,
               categoryName: 'ક્રેડિટ કાર્ડ બિલ',
               categoryEmoji: '💳',
               accountId: _paymentFromAccountId!,
+              linkedCreditCardAccountId: _creditCardAccountId!,
               date: _date,
               note:
                   _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
@@ -245,13 +298,16 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
           : TransactionModel(
               id: widget.existing?.id,
               userId: user.id,
-              title: _titleCtrl.text.trim(),
+              title: _titleCtrl.text.trim().isEmpty
+                  ? (_isIncome ? 'આવક' : 'ખર્ચ')
+                  : _titleCtrl.text.trim(),
               amount: amount,
               type: _type,
               categoryId: _selectedCategory!.id,
               categoryName: _selectedCategory!.name,
               categoryEmoji: _selectedCategory!.emoji,
               accountId: _accountId!,
+              linkedCreditCardAccountId: null,
               date: _date,
               note:
                   _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
@@ -260,11 +316,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
       if (_isEdit) {
         await txnP.updateTransaction(txn);
         _showSnack(
-            _isCcPayment ? 'ક્રેડિટ કાર્ડ બિલ સુધારાઈ ✅' : 'નોંધ સુધારાઈ ✅');
+          _isCcPayment ? 'ક્રેડિટ કાર્ડ બિલ સુધારાઈ ✅' : 'નોંધ સુધારાઈ ✅',
+        );
       } else {
         await txnP.addTransaction(txn);
         _showSnack(
-            _isCcPayment ? 'ક્રેડિટ કાર્ડ બિલ સાચવાયું ✅' : 'નોંધ સાચવાઈ ✅');
+          _isCcPayment ? 'ક્રેડિટ કાર્ડ બિલ સાચવાયું ✅' : 'નોંધ સાચવાઈ ✅',
+        );
       }
 
       await accP.recalculateBalancesFromTransactions();
@@ -283,8 +341,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
   void _showSnack(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content:
-            Text(msg, style: const TextStyle(fontFamily: 'NotoSansGujarati')),
+        content: Text(
+          msg,
+          style: const TextStyle(fontFamily: 'NotoSansGujarati'),
+        ),
         backgroundColor: isError ? AppColors.expense : AppColors.income,
         behavior: SnackBarBehavior.floating,
       ),
@@ -301,8 +361,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
       hintText: hint,
       prefixIcon:
           icon != null ? Icon(icon, color: AppColors.primary, size: 18) : null,
-      labelStyle: const TextStyle(fontFamily: 'NotoSansGujarati', fontSize: 13),
-      hintStyle: const TextStyle(fontFamily: 'NotoSansGujarati', fontSize: 12),
+      labelStyle: const TextStyle(
+        fontFamily: 'NotoSansGujarati',
+        fontSize: 13,
+      ),
+      hintStyle: const TextStyle(
+        fontFamily: 'NotoSansGujarati',
+        fontSize: 12,
+      ),
       border: InputBorder.none,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
     );
@@ -393,10 +459,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                     final emoji = emojiCtrl.text.trim().isEmpty
                         ? '📁'
                         : emojiCtrl.text.trim();
+
                     if (name.isEmpty) return;
 
-                    final type =
-                        _type == TransactionType.income ? 'income' : 'expense';
+                    final type = _isIncome ? 'income' : 'expense';
 
                     await context.read<CategoryProvider>().addCategory(
                           name: name,
@@ -407,9 +473,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                     if (!mounted) return;
                     await context.read<CategoryProvider>().loadCategories();
 
-                    final updatedCategories = _categories;
+                    final updatedCats = _categoriesRead();
                     try {
-                      _selectedCategory = updatedCategories.lastWhere(
+                      _selectedCategory = updatedCats.lastWhere(
                         (c) =>
                             c.name == name &&
                             c.emoji == emoji &&
@@ -445,6 +511,21 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
 
   @override
   Widget build(BuildContext context) {
+    final accountProvider = context.watch<AccountProvider>();
+    final categoryProvider = context.watch<CategoryProvider>();
+
+    final allAccounts = accountProvider.activeAccounts;
+    final normalAccounts = allAccounts.where((a) => !a.isCreditCard).toList();
+    final creditCardAccounts =
+        allAccounts.where((a) => a.isCreditCard).toList();
+
+    final expenseAccounts =
+        _isExpenseFromCreditCard ? creditCardAccounts : normalAccounts;
+
+    final categories = _isCcPayment
+        ? <AppCategoryModel>[]
+        : categoryProvider.byType(_isIncome ? 'income' : 'expense');
+
     final cur = context.read<SettingsProvider>().currency;
     final accent = _isIncome
         ? AppColors.income
@@ -512,6 +593,95 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
               ),
             ),
             const SizedBox(height: 16),
+            if (_isExpense) ...[
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surfaceContainerHighest
+                      .withOpacity(0.35),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _isExpenseFromCreditCard = false;
+                            _accountId = normalAccounts.isNotEmpty
+                                ? normalAccounts.first.id
+                                : null;
+                          });
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: !_isExpenseFromCreditCard
+                                ? accent
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            'સામાન્ય ખર્ચ',
+                            style: TextStyle(
+                              fontFamily: 'NotoSansGujarati',
+                              fontWeight: FontWeight.w700,
+                              color: !_isExpenseFromCreditCard
+                                  ? Colors.white
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSurface
+                                      .withOpacity(0.70),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _isExpenseFromCreditCard = true;
+                            _accountId = creditCardAccounts.isNotEmpty
+                                ? creditCardAccounts.first.id
+                                : null;
+                          });
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: _isExpenseFromCreditCard
+                                ? accent
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            'ક્રેડિટ કાર્ડ ખર્ચ',
+                            style: TextStyle(
+                              fontFamily: 'NotoSansGujarati',
+                              fontWeight: FontWeight.w700,
+                              color: _isExpenseFromCreditCard
+                                  ? Colors.white
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSurface
+                                      .withOpacity(0.70),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),
@@ -521,7 +691,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                 border: Border.all(
                   color:
                       Theme.of(context).colorScheme.outline.withOpacity(0.10),
-                  width: 1,
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -545,7 +714,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          _isCcPayment ? '💳' : cur,
+                          _isCcPayment
+                              ? '💳'
+                              : (_isExpense && _isExpenseFromCreditCard)
+                                  ? '💳'
+                                  : cur,
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -564,7 +737,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                                   ? 'આવકની રકમ'
                                   : _isCcPayment
                                       ? 'ક્રેડિટ કાર્ડ બિલ રકમ'
-                                      : 'ખર્ચની રકમ',
+                                      : _isExpenseFromCreditCard
+                                          ? 'ક્રેડિટ કાર્ડ ખર્ચ રકમ'
+                                          : 'ખર્ચની રકમ',
                               style: TextStyle(
                                 fontFamily: 'NotoSansGujarati',
                                 fontSize: 14,
@@ -578,7 +753,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                                   ? 'કેટલી આવક થઈ?'
                                   : _isCcPayment
                                       ? 'કેટલું બિલ ચૂકવ્યું?'
-                                      : 'કેટલો ખર્ચ થયો?',
+                                      : _isExpenseFromCreditCard
+                                          ? 'કાર્ડ પરથી કેટલો ખર્ચ થયો?'
+                                          : 'કેટલો ખર્ચ થયો?',
                               style: TextStyle(
                                 fontFamily: 'NotoSansGujarati',
                                 fontSize: 12,
@@ -612,18 +789,18 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                         borderRadius: BorderRadius.circular(18),
                         border: Border.all(
                           color: accent.withOpacity(0.10),
-                          width: 1,
                         ),
                       ),
                       child: TextFormField(
                         controller: _amountCtrl,
                         keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
+                          decimal: true,
+                        ),
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(
-                              RegExp(r'^\d*\.?\d{0,2}$')),
+                            RegExp(r'^\d*\.?\d{0,2}$'),
+                          ),
                         ],
-                        textAlign: TextAlign.left,
                         cursorColor: accent,
                         style: TextStyle(
                           fontSize: 34,
@@ -644,7 +821,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                           border: InputBorder.none,
                           isCollapsed: true,
                           contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 22),
+                            horizontal: 20,
+                            vertical: 22,
+                          ),
                           counterText: '',
                         ),
                         validator: (v) {
@@ -667,7 +846,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                   label: 'શીર્ષક *',
                   hint: _isCcPayment
                       ? 'દા.ત. SBI Card Bill'
-                      : 'દા.ત. કિરાણા, ઑફિસ ખર્ચ...',
+                      : _isExpenseFromCreditCard
+                          ? 'દા.ત. Amazon order, Fuel...'
+                          : 'દા.ત. કિરાણા, ઑફિસ ખર્ચ...',
                   icon: Icons.edit_rounded,
                 ),
                 validator: (v) {
@@ -685,13 +866,16 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                     label: 'કયા ખાતામાંથી ચૂકવ્યું? *',
                     icon: Icons.account_balance_wallet_rounded,
                   ),
-                  items: _normalAccounts
+                  items: normalAccounts
                       .map(
-                        (a) => DropdownMenuItem(
+                        (a) => DropdownMenuItem<String>(
                           value: a.id,
-                          child: Text('${a.icon} ${a.name}',
-                              style: const TextStyle(
-                                  fontFamily: 'NotoSansGujarati')),
+                          child: Text(
+                            '${a.icon} ${a.name}',
+                            style: const TextStyle(
+                              fontFamily: 'NotoSansGujarati',
+                            ),
+                          ),
                         ),
                       )
                       .toList(),
@@ -707,13 +891,16 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                     label: 'કયું ક્રેડિટ કાર્ડ? *',
                     icon: Icons.credit_card_rounded,
                   ),
-                  items: _creditCardAccounts
+                  items: creditCardAccounts
                       .map(
-                        (a) => DropdownMenuItem(
+                        (a) => DropdownMenuItem<String>(
                           value: a.id,
-                          child: Text('${a.icon} ${a.name}',
-                              style: const TextStyle(
-                                  fontFamily: 'NotoSansGujarati')),
+                          child: Text(
+                            '${a.icon} ${a.name}',
+                            style: const TextStyle(
+                              fontFamily: 'NotoSansGujarati',
+                            ),
+                          ),
                         ),
                       )
                       .toList(),
@@ -727,16 +914,23 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                 child: DropdownButtonFormField<String>(
                   value: _accountId,
                   decoration: _inputDec(
-                    label: 'ખાતું *',
-                    icon: Icons.account_balance_wallet_rounded,
+                    label: _isExpense && _isExpenseFromCreditCard
+                        ? 'ક્રેડિટ કાર્ડ *'
+                        : 'ખાતું *',
+                    icon: _isExpense && _isExpenseFromCreditCard
+                        ? Icons.credit_card_rounded
+                        : Icons.account_balance_wallet_rounded,
                   ),
-                  items: _allAccounts
+                  items: (_isIncome ? normalAccounts : expenseAccounts)
                       .map(
-                        (a) => DropdownMenuItem(
+                        (a) => DropdownMenuItem<String>(
                           value: a.id,
-                          child: Text('${a.icon} ${a.name}',
-                              style: const TextStyle(
-                                  fontFamily: 'NotoSansGujarati')),
+                          child: Text(
+                            '${a.icon} ${a.name}',
+                            style: const TextStyle(
+                              fontFamily: 'NotoSansGujarati',
+                            ),
+                          ),
                         ),
                       )
                       .toList(),
@@ -758,14 +952,16 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  ..._categories.map((c) {
+                  ...categories.map((c) {
                     final selected = _selectedCategory?.id == c.id;
                     return GestureDetector(
                       onTap: () => setState(() => _selectedCategory = c),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 150),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: selected
                               ? accent.withOpacity(0.10)
@@ -797,7 +993,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: Theme.of(context)
                             .colorScheme

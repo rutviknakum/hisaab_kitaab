@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../core/app_colors.dart';
 import '../../models/account_model.dart';
 import '../../providers/account_provider.dart';
 
 class AddAccountScreen extends StatefulWidget {
   final AccountModel? existing;
+
   const AddAccountScreen({super.key, this.existing});
 
   @override
@@ -14,8 +16,11 @@ class AddAccountScreen extends StatefulWidget {
 
 class _AddAccountScreenState extends State<AddAccountScreen> {
   final _formKey = GlobalKey<FormState>();
+
   final _nameCtrl = TextEditingController();
   final _balCtrl = TextEditingController();
+  final _creditLimitCtrl = TextEditingController();
+  final _outstandingCtrl = TextEditingController();
 
   AccountType _type = AccountType.cash;
   String _color = '#01696F';
@@ -23,6 +28,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   bool _saving = false;
 
   bool get _isEdit => widget.existing != null;
+  bool get _isCreditCard => _type == AccountType.creditCard;
 
   static const _colorOptions = [
     '#01696F',
@@ -54,10 +60,13 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   @override
   void initState() {
     super.initState();
+
     if (_isEdit) {
       final a = widget.existing!;
       _nameCtrl.text = a.name;
       _balCtrl.text = a.balance.toStringAsFixed(2);
+      _creditLimitCtrl.text = a.creditLimit.toStringAsFixed(2);
+      _outstandingCtrl.text = a.outstandingAmount.toStringAsFixed(2);
       _type = a.type;
       _color = a.color;
       _icon = a.icon;
@@ -68,23 +77,33 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _balCtrl.dispose();
+    _creditLimitCtrl.dispose();
+    _outstandingCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+
     setState(() => _saving = true);
 
     try {
       final accP = context.read<AccountProvider>();
+
+      final balance = double.tryParse(_balCtrl.text.trim()) ?? 0.0;
+      final creditLimit = double.tryParse(_creditLimitCtrl.text.trim()) ?? 0.0;
+      final outstanding = double.tryParse(_outstandingCtrl.text.trim()) ?? 0.0;
+
       final account = AccountModel(
         id: widget.existing?.id,
+        userId: widget.existing?.userId ?? '',
         name: _nameCtrl.text.trim(),
         type: _type,
-        balance: double.tryParse(_balCtrl.text) ?? 0,
+        balance: _isCreditCard ? 0.0 : balance,
+        creditLimit: _isCreditCard ? creditLimit : 0.0,
+        outstandingAmount: _isCreditCard ? outstanding : 0.0,
         color: _color,
         icon: _icon,
-        userId: '',
       );
 
       if (_isEdit) {
@@ -105,6 +124,10 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   @override
   Widget build(BuildContext context) {
     final accentColor = Color(int.parse(_color.replaceFirst('#', '0xFF')));
+
+    final previewSubtitle = _isCreditCard
+        ? 'લિમિટ ₹${_creditLimitCtrl.text.trim().isEmpty ? '0.00' : _creditLimitCtrl.text.trim()}  •  Outstanding ₹${_outstandingCtrl.text.trim().isEmpty ? '0.00' : _outstandingCtrl.text.trim()}'
+        : 'Opening ₹${_balCtrl.text.trim().isEmpty ? '0.00' : _balCtrl.text.trim()}';
 
     return Scaffold(
       appBar: AppBar(
@@ -149,9 +172,11 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
               margin: const EdgeInsets.only(bottom: 20),
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: accentColor.withValues(alpha: 0.10),
+                color: accentColor.withOpacity(0.10),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: accentColor.withValues(alpha: 0.30)),
+                border: Border.all(
+                  color: accentColor.withOpacity(0.30),
+                ),
               ),
               child: Row(
                 children: [
@@ -179,7 +204,17 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                           style: TextStyle(
                             fontSize: 12,
                             fontFamily: 'NotoSansGujarati',
-                            color: accentColor.withValues(alpha: 0.75),
+                            color: accentColor.withOpacity(0.75),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          previewSubtitle,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'NotoSansGujarati',
+                            fontWeight: FontWeight.w600,
+                            color: accentColor.withOpacity(0.80),
                           ),
                         ),
                       ],
@@ -195,22 +230,13 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
               onChanged: (_) => setState(() {}),
               decoration: _inputDec(
                 label: 'ખાતાનું નામ *',
-                hint: 'દા.ત. SBI Saving, રોકડ...',
+                hint: _isCreditCard
+                    ? 'દા.ત. SBI Card, HDFC Card...'
+                    : 'દા.ત. SBI Saving, રોકડ...',
                 icon: Icons.account_balance_wallet_outlined,
               ),
               validator: (v) =>
                   v == null || v.trim().isEmpty ? 'નામ લખો' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _balCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: _inputDec(
-                label: 'Opening Balance (₹)',
-                hint: '0.00',
-                icon: Icons.currency_rupee,
-              ),
             ),
             const SizedBox(height: 20),
             _sectionTitle('ખાતાનો પ્રકાર'),
@@ -235,12 +261,11 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                           : Theme.of(context)
                               .colorScheme
                               .surfaceContainerHighest
-                              .withValues(alpha: 0.35),
+                              .withOpacity(0.35),
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: sel
-                            ? accentColor
-                            : Colors.grey.withValues(alpha: 0.15),
+                        color:
+                            sel ? accentColor : Colors.grey.withOpacity(0.15),
                       ),
                     ),
                     child: Column(
@@ -265,6 +290,89 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
               }).toList(),
             ),
             const SizedBox(height: 20),
+            _sectionTitle(_isCreditCard ? 'કાર્ડ વિગતો' : 'બેલેન્સ વિગતો'),
+            const SizedBox(height: 8),
+            if (_isCreditCard) ...[
+              TextFormField(
+                controller: _creditLimitCtrl,
+                onChanged: (_) => setState(() {}),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: _inputDec(
+                  label: 'કુલ ક્રેડિટ લિમિટ *',
+                  hint: 'દા.ત. 50000',
+                  icon: Icons.credit_score_rounded,
+                ),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) {
+                    return 'ક્રેડિટ લિમિટ લખો';
+                  }
+                  final n = double.tryParse(v.trim());
+                  if (n == null || n < 0) {
+                    return 'સાચી ક્રેડિટ લિમિટ લખો';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _outstandingCtrl,
+                onChanged: (_) => setState(() {}),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: _inputDec(
+                  label: 'હાલનું Outstanding',
+                  hint: 'દા.ત. 12000',
+                  icon: Icons.receipt_long_rounded,
+                ),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return null;
+
+                  final outstanding = double.tryParse(v.trim());
+                  if (outstanding == null || outstanding < 0) {
+                    return 'સાચું outstanding લખો';
+                  }
+
+                  final limit =
+                      double.tryParse(_creditLimitCtrl.text.trim()) ?? 0.0;
+                  if (outstanding > limit) {
+                    return 'Outstanding લિમિટ કરતાં વધુ નથી હોઈ શકતું';
+                  }
+
+                  return null;
+                },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'નોંધ: આ કાર્ડ પરથી ખર્ચ કરશો તો outstanding વધશે અને બિલ ભરશો તો ઓછું થશે.',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.5,
+                  fontFamily: 'NotoSansGujarati',
+                  color:
+                      Theme.of(context).colorScheme.onSurface.withOpacity(0.65),
+                ),
+              ),
+            ] else ...[
+              TextFormField(
+                controller: _balCtrl,
+                onChanged: (_) => setState(() {}),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: _inputDec(
+                  label: 'Opening Balance (₹)',
+                  hint: '0.00',
+                  icon: Icons.currency_rupee,
+                ),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return null;
+                  final n = double.tryParse(v.trim());
+                  if (n == null) return 'સાચી રકમ લખો';
+                  return null;
+                },
+              ),
+            ],
+            const SizedBox(height: 20),
             _sectionTitle('Icon પસંદ કરો'),
             const SizedBox(height: 10),
             Wrap(
@@ -280,11 +388,11 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                     height: 52,
                     decoration: BoxDecoration(
                       color: sel
-                          ? accentColor.withValues(alpha: 0.15)
+                          ? accentColor.withOpacity(0.15)
                           : Theme.of(context)
                               .colorScheme
                               .surfaceContainerHighest
-                              .withValues(alpha: 0.35),
+                              .withOpacity(0.35),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: sel ? accentColor : Colors.transparent,
@@ -307,6 +415,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
               children: _colorOptions.map((c) {
                 final color = Color(int.parse(c.replaceFirst('#', '0xFF')));
                 final sel = _color == c;
+
                 return GestureDetector(
                   onTap: () => setState(() => _color = c),
                   child: AnimatedContainer(
@@ -323,10 +432,10 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                       boxShadow: sel
                           ? [
                               BoxShadow(
-                                color: color.withValues(alpha: 0.50),
+                                color: color.withOpacity(0.50),
                                 blurRadius: 8,
                                 offset: const Offset(0, 2),
-                              )
+                              ),
                             ]
                           : null,
                     ),
@@ -387,28 +496,32 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     required String label,
     String? hint,
     IconData? icon,
-  }) =>
-      InputDecoration(
-        labelText: label,
-        labelStyle:
-            const TextStyle(fontFamily: 'NotoSansGujarati', fontSize: 13),
-        hintText: hint,
-        prefixIcon: icon != null
-            ? Icon(icon, size: 18, color: AppColors.primary)
-            : null,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.borderLight),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.borderLight),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.primary, width: 2),
-        ),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      );
+  }) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(
+        fontFamily: 'NotoSansGujarati',
+        fontSize: 13,
+      ),
+      hintText: hint,
+      prefixIcon:
+          icon != null ? Icon(icon, size: 18, color: AppColors.primary) : null,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.borderLight),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.borderLight),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.primary, width: 2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 14,
+      ),
+    );
+  }
 }

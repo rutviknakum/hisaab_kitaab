@@ -104,6 +104,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                   : null);
         } else {
           _accountId = txn.accountId;
+
           final selectedAccount = _allAccountsRead
               .where((a) => a.id == txn.accountId)
               .cast<AccountModel?>()
@@ -216,6 +217,109 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
     super.dispose();
   }
 
+  String _fmt(double v) => NumberFormat('#,##,##0.00', 'en_IN').format(v.abs());
+
+  String? _checkBalanceWarning(double amount) {
+    final cur = context.read<SettingsProvider>().currency;
+    final accounts = context.read<AccountProvider>().activeAccounts;
+
+    if (_isCcPayment) {
+      final fromAcc = accounts
+          .where((a) => a.id == _paymentFromAccountId)
+          .cast<AccountModel?>()
+          .firstWhere((_) => true, orElse: () => null);
+
+      if (fromAcc != null && amount > fromAcc.balance) {
+        return '"${fromAcc.name}" ખાતામાં બેલેન્સ ઓછું છે!\n'
+            'હાલ બેલેન્સ: $cur${_fmt(fromAcc.balance)}\n'
+            'ચૂકવવાની રકમ: $cur${_fmt(amount)}';
+      }
+      return null;
+    }
+
+    if (_isExpense) {
+      final acc = accounts
+          .where((a) => a.id == _accountId)
+          .cast<AccountModel?>()
+          .firstWhere((_) => true, orElse: () => null);
+
+      if (acc == null) return null;
+
+      if (acc.isCreditCard) {
+        final available = acc.availableLimit < 0 ? 0.0 : acc.availableLimit;
+        if (amount > available) {
+          return '"${acc.name}" ની ઉપલબ્ધ limit ઓછી છે!\n'
+              'ઉપલબ્ધ limit: $cur${_fmt(available)}\n'
+              'ખર્ચની રકમ: $cur${_fmt(amount)}';
+        }
+      } else {
+        if (amount > acc.balance) {
+          return '"${acc.name}" ખાતામાં બેલેન્સ ઓછું છે!\n'
+              'હાલ બેલેન્સ: $cur${_fmt(acc.balance)}\n'
+              'ખર્ચની રકમ: $cur${_fmt(amount)}';
+        }
+      }
+    }
+
+    return null;
+  }
+
+  Future<bool> _showBalanceWarningDialog(String message) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Row(
+          children: [
+            Text('⚠️', style: TextStyle(fontSize: 22)),
+            SizedBox(width: 8),
+            Text(
+              'બેલેન્સ ઓછું છે',
+              style: TextStyle(
+                fontFamily: 'NotoSansGujarati',
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(
+            fontFamily: 'NotoSansGujarati',
+            height: 1.7,
+            fontSize: 14,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'રદ કરો',
+              style: TextStyle(fontFamily: 'NotoSansGujarati'),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.warning,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text(
+              'છતાં સાચવો',
+              style: TextStyle(fontFamily: 'NotoSansGujarati'),
+            ),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -269,6 +373,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
         _showSnack('કેટેગરી પસંદ કરો', isError: true);
         return;
       }
+    }
+
+    final warning = _checkBalanceWarning(amount);
+    if (warning != null) {
+      final proceed = await _showBalanceWarningDialog(warning);
+      if (!proceed) return;
     }
 
     setState(() => _saving = true);
@@ -385,6 +495,49 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
       ),
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: child,
+    );
+  }
+
+  Widget _accountDropdownChild({
+    required String icon,
+    required String name,
+    required String subText,
+    required bool isLow,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(icon, style: const TextStyle(fontSize: 16)),
+        const SizedBox(width: 8),
+        Flexible(
+          child: RichText(
+            overflow: TextOverflow.ellipsis,
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: name,
+                  style: const TextStyle(
+                    fontFamily: 'NotoSansGujarati',
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color:
+                        Colors.black87, // will be overridden by theme if needed
+                  ),
+                ),
+                TextSpan(
+                  text: '  $subText',
+                  style: TextStyle(
+                    fontFamily: 'NotoSansGujarati',
+                    fontSize: 11,
+                    color: isLow ? AppColors.expense : Colors.grey,
+                    fontWeight: isLow ? FontWeight.w700 : FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -527,6 +680,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
         : categoryProvider.byType(_isIncome ? 'income' : 'expense');
 
     final cur = context.read<SettingsProvider>().currency;
+
     final accent = _isIncome
         ? AppColors.income
         : _isCcPayment
@@ -862,23 +1016,23 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
               _fieldCard(
                 child: DropdownButtonFormField<String>(
                   value: _paymentFromAccountId,
+                  isExpanded: true,
                   decoration: _inputDec(
                     label: 'કયા ખાતામાંથી ચૂકવ્યું? *',
                     icon: Icons.account_balance_wallet_rounded,
                   ),
-                  items: normalAccounts
-                      .map(
-                        (a) => DropdownMenuItem<String>(
-                          value: a.id,
-                          child: Text(
-                            '${a.icon} ${a.name}',
-                            style: const TextStyle(
-                              fontFamily: 'NotoSansGujarati',
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
+                  items: normalAccounts.map((a) {
+                    final isLow = a.balance <= 0;
+                    return DropdownMenuItem<String>(
+                      value: a.id,
+                      child: _accountDropdownChild(
+                        icon: a.icon,
+                        name: a.name,
+                        subText: 'બેલેન્સ: $cur${_fmt(a.balance)}',
+                        isLow: isLow,
+                      ),
+                    );
+                  }).toList(),
                   onChanged: (v) => setState(() => _paymentFromAccountId = v),
                   validator: (v) => v == null ? 'ખાતું પસંદ કરો' : null,
                 ),
@@ -887,23 +1041,23 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
               _fieldCard(
                 child: DropdownButtonFormField<String>(
                   value: _creditCardAccountId,
+                  isExpanded: true,
                   decoration: _inputDec(
                     label: 'કયું ક્રેડિટ કાર્ડ? *',
                     icon: Icons.credit_card_rounded,
                   ),
-                  items: creditCardAccounts
-                      .map(
-                        (a) => DropdownMenuItem<String>(
-                          value: a.id,
-                          child: Text(
-                            '${a.icon} ${a.name}',
-                            style: const TextStyle(
-                              fontFamily: 'NotoSansGujarati',
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
+                  items: creditCardAccounts.map((a) {
+                    final outstanding = a.outstandingAmount;
+                    return DropdownMenuItem<String>(
+                      value: a.id,
+                      child: _accountDropdownChild(
+                        icon: a.icon,
+                        name: a.name,
+                        subText: 'બાકી: $cur${_fmt(outstanding)}',
+                        isLow: outstanding > 0,
+                      ),
+                    );
+                  }).toList(),
                   onChanged: (v) => setState(() => _creditCardAccountId = v),
                   validator: (v) => v == null ? 'ક્રેડિટ કાર્ડ પસંદ કરો' : null,
                 ),
@@ -913,6 +1067,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
               _fieldCard(
                 child: DropdownButtonFormField<String>(
                   value: _accountId,
+                  isExpanded: true,
                   decoration: _inputDec(
                     label: _isExpense && _isExpenseFromCreditCard
                         ? 'ક્રેડિટ કાર્ડ *'
@@ -921,19 +1076,24 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                         ? Icons.credit_card_rounded
                         : Icons.account_balance_wallet_rounded,
                   ),
-                  items: (_isIncome ? normalAccounts : expenseAccounts)
-                      .map(
-                        (a) => DropdownMenuItem<String>(
-                          value: a.id,
-                          child: Text(
-                            '${a.icon} ${a.name}',
-                            style: const TextStyle(
-                              fontFamily: 'NotoSansGujarati',
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
+                  items:
+                      (_isIncome ? normalAccounts : expenseAccounts).map((a) {
+                    final isCc = a.isCreditCard;
+                    final balanceText = isCc
+                        ? 'ઉપલબ્ધ: $cur${_fmt(a.availableLimit < 0 ? 0 : a.availableLimit)}'
+                        : 'બેલેન્સ: $cur${_fmt(a.balance)}';
+                    final isLow = isCc ? a.availableLimit <= 0 : a.balance <= 0;
+
+                    return DropdownMenuItem<String>(
+                      value: a.id,
+                      child: _accountDropdownChild(
+                        icon: a.icon,
+                        name: a.name,
+                        subText: balanceText,
+                        isLow: isLow,
+                      ),
+                    );
+                  }).toList(),
                   onChanged: (v) => setState(() => _accountId = v),
                   validator: (v) => v == null ? 'ખાતું પસંદ કરો' : null,
                 ),
@@ -1026,7 +1186,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
                     color: accent.withOpacity(0.10),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Icon(Icons.calendar_today, color: accent, size: 18),
+                  child: Icon(
+                    Icons.calendar_today,
+                    color: accent,
+                    size: 18,
+                  ),
                 ),
                 title: const Text(
                   'તારીખ',

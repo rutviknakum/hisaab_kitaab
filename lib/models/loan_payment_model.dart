@@ -65,14 +65,15 @@ class LoanPaymentModel {
 
   factory LoanPaymentModel.fromMap(Map<String, dynamic> map) =>
       LoanPaymentModel(
-        id: map[DbConstants.cId],
-        userId: map[DbConstants.cUserId] ?? '',
-        loanId: map[DbConstants.cPayLoanId],
+        id: map[DbConstants.cId] as String,
+        userId: (map[DbConstants.cUserId] ?? '') as String,
+        loanId: map[DbConstants.cPayLoanId] as String,
         amount: (map[DbConstants.cPayAmount] as num).toDouble(),
-        paymentDate: DateTime.parse(map[DbConstants.cPayDate]),
-        towards: PaymentTowards.values.byName(map[DbConstants.cPayTowards]),
-        note: map[DbConstants.cPayNote],
-        accountId: map[DbConstants.cPayAccountId],
-        createdAt: DateTime.parse(map[DbConstants.cCreatedAt]),
+        paymentDate: DateTime.parse(map[DbConstants.cPayDate] as String),
+        towards: PaymentTowards.values
+            .byName(map[DbConstants.cPayTowards] as String),
+        note: map[DbConstants.cPayNote] as String?,
+        accountId: map[DbConstants.cPayAccountId] as String,
+        createdAt: DateTime.parse(map[DbConstants.cCreatedAt] as String),
       );
 }

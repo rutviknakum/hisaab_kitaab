@@ -68,7 +68,6 @@ class DatabaseHelper {
       } catch (_) {}
     }
 
-    // v4 → v5: transaction schema expansion
     if (oldVersion < 5) {
       try {
         await db.execute(
@@ -100,6 +99,15 @@ class DatabaseHelper {
         );
       } catch (_) {}
     }
+
+    if (oldVersion < 6) {
+      try {
+        await db.execute(
+          'ALTER TABLE ${DbConstants.tLoans} '
+          'ADD COLUMN ${DbConstants.cLoanAccountId} TEXT',
+        );
+      } catch (_) {}
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -125,21 +133,21 @@ class DatabaseHelper {
         ${DbConstants.cId}                            TEXT PRIMARY KEY,
         ${DbConstants.cUserId}                        TEXT NOT NULL,
         ${DbConstants.cTxnTitle}                      TEXT NOT NULL,
-        subtitle                                      TEXT,
+        ${DbConstants.cTxnSubtitle}                   TEXT,
         ${DbConstants.cTxnAmount}                     REAL NOT NULL,
         ${DbConstants.cTxnType}                       TEXT NOT NULL,
-        category_id                                   TEXT,
-        category_name                                 TEXT NOT NULL DEFAULT 'કેટેગરી',
-        category_emoji                                TEXT NOT NULL DEFAULT '📁',
+        ${DbConstants.cTxnCategoryId}                 TEXT,
+        ${DbConstants.cTxnCategoryName}               TEXT NOT NULL DEFAULT 'કેટેગરી',
+        ${DbConstants.cTxnCategoryEmoji}              TEXT NOT NULL DEFAULT '📁',
         ${DbConstants.cTxnCustomCategory}             TEXT,
         ${DbConstants.cTxnAccId}                      TEXT NOT NULL,
-        linked_credit_card_account_id                 TEXT,
+        ${DbConstants.cTxnLinkedCreditCardAccountId}  TEXT,
         ${DbConstants.cTxnDate}                       TEXT NOT NULL,
         ${DbConstants.cTxnNote}                       TEXT,
         ${DbConstants.cCreatedAt}                     TEXT NOT NULL,
         FOREIGN KEY (${DbConstants.cTxnAccId})
           REFERENCES ${DbConstants.tAccounts}(${DbConstants.cId}),
-        FOREIGN KEY (linked_credit_card_account_id)
+        FOREIGN KEY (${DbConstants.cTxnLinkedCreditCardAccountId})
           REFERENCES ${DbConstants.tAccounts}(${DbConstants.cId})
       )
     ''');
@@ -161,6 +169,7 @@ class DatabaseHelper {
         ${DbConstants.cId}                TEXT PRIMARY KEY,
         ${DbConstants.cUserId}            TEXT NOT NULL,
         ${DbConstants.cLoanPersonId}      TEXT NOT NULL,
+        ${DbConstants.cLoanAccountId}     TEXT,
         ${DbConstants.cLoanType}          TEXT NOT NULL,
         ${DbConstants.cLoanPrincipal}     REAL NOT NULL,
         ${DbConstants.cLoanInterestRate}  REAL DEFAULT 0,
@@ -177,22 +186,27 @@ class DatabaseHelper {
         ${DbConstants.cCreatedAt}         TEXT NOT NULL,
         ${DbConstants.cUpdatedAt}         TEXT NOT NULL,
         FOREIGN KEY (${DbConstants.cLoanPersonId})
-          REFERENCES ${DbConstants.tPersons}(${DbConstants.cId})
+          REFERENCES ${DbConstants.tPersons}(${DbConstants.cId}),
+        FOREIGN KEY (${DbConstants.cLoanAccountId})
+          REFERENCES ${DbConstants.tAccounts}(${DbConstants.cId})
       )
     ''');
 
     await db.execute('''
       CREATE TABLE ${DbConstants.tPayments} (
-        ${DbConstants.cId}          TEXT PRIMARY KEY,
-        ${DbConstants.cUserId}      TEXT NOT NULL,
-        ${DbConstants.cPayLoanId}   TEXT NOT NULL,
-        ${DbConstants.cPayAmount}   REAL NOT NULL,
-        ${DbConstants.cPayDate}     TEXT NOT NULL,
-        ${DbConstants.cPayTowards}  TEXT NOT NULL,
-        ${DbConstants.cPayNote}     TEXT,
-        ${DbConstants.cCreatedAt}   TEXT NOT NULL,
+        ${DbConstants.cId}            TEXT PRIMARY KEY,
+        ${DbConstants.cUserId}        TEXT NOT NULL,
+        ${DbConstants.cPayLoanId}     TEXT NOT NULL,
+        ${DbConstants.cPayAmount}     REAL NOT NULL,
+        ${DbConstants.cPayDate}       TEXT NOT NULL,
+        ${DbConstants.cPayTowards}    TEXT NOT NULL,
+        ${DbConstants.cPayNote}       TEXT,
+        ${DbConstants.cPayAccountId}  TEXT,
+        ${DbConstants.cCreatedAt}     TEXT NOT NULL,
         FOREIGN KEY (${DbConstants.cPayLoanId})
-          REFERENCES ${DbConstants.tLoans}(${DbConstants.cId})
+          REFERENCES ${DbConstants.tLoans}(${DbConstants.cId}),
+        FOREIGN KEY (${DbConstants.cPayAccountId})
+          REFERENCES ${DbConstants.tAccounts}(${DbConstants.cId})
       )
     ''');
 

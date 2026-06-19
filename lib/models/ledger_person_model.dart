@@ -50,12 +50,14 @@ class LedgerPersonModel {
 
   factory LedgerPersonModel.fromMap(Map<String, dynamic> map) =>
       LedgerPersonModel(
-        id: map[DbConstants.cId],
-        userId: map[DbConstants.cUserId] ?? '',
-        name: map[DbConstants.cPerName],
-        phone: map[DbConstants.cPerPhone],
-        note: map[DbConstants.cPerNote],
-        createdAt: DateTime.parse(map[DbConstants.cCreatedAt]),
-        updatedAt: DateTime.parse(map[DbConstants.cUpdatedAt]),
+        id: map[DbConstants.cId] as String,
+        userId: (map[DbConstants.cUserId] ?? '') as String,
+        name: map[DbConstants.cPerName] as String,
+        phone: map[DbConstants.cPerPhone] as String?,
+        note: map[DbConstants.cPerNote] as String?,
+        createdAt: DateTime.parse(map[DbConstants.cCreatedAt] as String),
+        updatedAt: DateTime.parse(map[DbConstants.cUpdatedAt] as String),
       );
 }
+
+typedef PersonModel = LedgerPersonModel;

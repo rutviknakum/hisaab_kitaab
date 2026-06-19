@@ -107,6 +107,33 @@ class AccountProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> adjustBalance({
+    required String accountId,
+    required double amount,
+    required bool add,
+  }) async {
+    final userId = _currentUserId;
+    if (userId == null) throw Exception('User not logged in');
+
+    final acc = _accounts.firstWhere((a) => a.id == accountId);
+    final nextBalance = add ? acc.balance + amount : acc.balance - amount;
+
+    await supabase
+        .from(DbConstants.tAccounts)
+        .update({
+          DbConstants.cAccBalance: nextBalance,
+        })
+        .eq(DbConstants.cId, accountId)
+        .eq(DbConstants.cUserId, userId);
+
+    final idx = _accounts.indexWhere((a) => a.id == accountId);
+    if (idx != -1) {
+      _accounts[idx] = acc.copyWith(balance: nextBalance);
+    }
+
+    notifyListeners();
+  }
+
   Future<void> recalculateBalancesFromTransactions() async {
     final userId = _currentUserId;
     if (userId == null) throw Exception('User not logged in');
@@ -150,7 +177,6 @@ class AccountProvider with ChangeNotifier {
                 (balances[txn.accountId] ?? 0.0) + txn.amount;
           }
           break;
-
         case TransactionType.expense:
           if (sourceAcc == null) break;
 
@@ -162,7 +188,6 @@ class AccountProvider with ChangeNotifier {
                 (balances[txn.accountId] ?? 0.0) - txn.amount;
           }
           break;
-
         case TransactionType.ccPayment:
           if (sourceAcc != null && !sourceAcc.isCreditCard) {
             balances[txn.accountId] =
@@ -183,6 +208,12 @@ class AccountProvider with ChangeNotifier {
             }
           }
           break;
+        case TransactionType.loanGiven:
+          // TODO: Handle this case.
+          throw UnimplementedError();
+        case TransactionType.loanTaken:
+          // TODO: Handle this case.
+          throw UnimplementedError();
       }
     }
 

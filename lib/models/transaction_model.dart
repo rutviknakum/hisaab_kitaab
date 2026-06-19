@@ -5,6 +5,8 @@ enum TransactionType {
   income,
   expense,
   ccPayment,
+  loanGiven,
+  loanTaken,
 }
 
 extension TransactionTypeInfo on TransactionType {
@@ -16,6 +18,10 @@ extension TransactionTypeInfo on TransactionType {
         return 'ખર્ચ';
       case TransactionType.ccPayment:
         return 'ક્રેડિટ કાર્ડ બિલ';
+      case TransactionType.loanGiven:
+        return 'લોન આપ્યું';
+      case TransactionType.loanTaken:
+        return 'લોન લીધું';
     }
   }
 }
@@ -63,6 +69,9 @@ class TransactionModel {
   bool get isIncome => type == TransactionType.income;
   bool get isExpense => type == TransactionType.expense;
   bool get isCcPayment => type == TransactionType.ccPayment;
+  bool get isLoanGiven => type == TransactionType.loanGiven;
+  bool get isLoanTaken => type == TransactionType.loanTaken;
+  bool get isLoanFlow => isLoanGiven || isLoanTaken;
 
   TransactionModel copyWith({
     String? userId,
@@ -116,7 +125,6 @@ class TransactionModel {
 
   factory TransactionModel.fromMap(Map<String, dynamic> map) {
     final rawType = (map[DbConstants.cTxnType] ?? 'expense').toString();
-
     final rawLinkedCc =
         map[DbConstants.cTxnLinkedCreditCardAccountId]?.toString();
 

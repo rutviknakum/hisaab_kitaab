@@ -2,7 +2,7 @@ class DbConstants {
   DbConstants._();
 
   static const String dbName = 'hisaab_kitaab.db';
-  static const int dbVersion = 5;
+  static const int dbVersion = 6;
 
   // ── Table Names ───────────────────────────────
   static const String tAccounts = 'accounts';
@@ -34,10 +34,7 @@ class DbConstants {
   static const String cTxnTitle = 'title';
   static const String cTxnAmount = 'amount';
   static const String cTxnType = 'type';
-
-  // old legacy field (keep temporarily if old code still references it)
   static const String cTxnCategory = 'category';
-
   static const String cTxnCategoryId = 'category_id';
   static const String cTxnCategoryName = 'category_name';
   static const String cTxnCategoryEmoji = 'category_emoji';
@@ -60,6 +57,7 @@ class DbConstants {
 
   // ── Loans ─────────────────────────────────────
   static const String cLoanPersonId = 'person_id';
+  static const String cLoanAccountId = 'account_id';
   static const String cLoanType = 'type';
   static const String cLoanPrincipal = 'principal';
   static const String cLoanInterestRate = 'interest_rate';
@@ -73,7 +71,6 @@ class DbConstants {
   static const String cLoanTotalMonths = 'total_months';
   static const String cLoanStatus = 'status';
   static const String cLoanNote = 'note';
-  static const String cPayAccountId = 'account_id';
 
   // ── Loan Payments ─────────────────────────────
   static const String cPayLoanId = 'loan_id';
@@ -81,6 +78,7 @@ class DbConstants {
   static const String cPayDate = 'payment_date';
   static const String cPayTowards = 'towards';
   static const String cPayNote = 'note';
+  static const String cPayAccountId = 'account_id';
 
   // ── Settings ──────────────────────────────────
   static const String cSetKey = 'key';

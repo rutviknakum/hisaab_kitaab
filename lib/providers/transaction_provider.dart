@@ -4,120 +4,107 @@ import '../database/db_constants.dart';
 import '../models/transaction_model.dart';
 
 class TransactionProvider with ChangeNotifier {
-  List<TransactionModel> _transactions = [];
+  List<TransactionModel> transactions = [];
 
-  List<TransactionModel> get transactions => List.unmodifiable(_transactions);
+  List<TransactionModel> get all => List.unmodifiable(transactions);
 
-  String? get _currentUserId => supabase.auth.currentUser?.id;
+  String? get currentUserId => supabase.auth.currentUser?.id;
 
   List<TransactionModel> get thisMonthTransactions {
     final now = DateTime.now();
-    return _transactions
+    return transactions
         .where((t) => t.date.year == now.year && t.date.month == now.month)
         .toList()
       ..sort((a, b) => b.date.compareTo(a.date));
   }
 
-  List<TransactionModel> getByMonth(int year, int month) => _transactions
+  List<TransactionModel> getByMonth(int year, int month) => transactions
       .where((t) => t.date.year == year && t.date.month == month)
       .toList()
     ..sort((a, b) => b.date.compareTo(a.date));
 
   List<TransactionModel> getByAccount(String accountId) =>
-      _transactions.where((t) => t.accountId == accountId).toList()
+      transactions.where((t) => t.accountId == accountId).toList()
         ..sort((a, b) => b.date.compareTo(a.date));
+
+  List<TransactionModel> getByDateRange(DateTime from, DateTime to) {
+    final start = DateTime(from.year, from.month, from.day);
+    final end = DateTime(to.year, to.month, to.day, 23, 59, 59);
+    return transactions
+        .where((t) => !t.date.isBefore(start) && !t.date.isAfter(end))
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+  }
+
+  double get totalIncome => transactions
+      .where((t) => t.type == TransactionType.income)
+      .fold(0.0, (s, t) => s + t.amount);
+
+  double get totalExpense => transactions
+      .where((t) => t.type == TransactionType.expense)
+      .fold(0.0, (s, t) => s + t.amount);
+
+  double get balance => totalIncome - totalExpense;
 
   double monthlyIncome(int year, int month) => getByMonth(year, month)
       .where((t) => t.type == TransactionType.income)
       .fold(0.0, (s, t) => s + t.amount);
 
   double monthlyExpense(int year, int month) => getByMonth(year, month)
-      .where((t) =>
-          t.type == TransactionType.expense ||
-          t.type == TransactionType.ccPayment)
+      .where((t) => t.type == TransactionType.expense)
       .fold(0.0, (s, t) => s + t.amount);
 
-  double monthlyCcBillPayments(int year, int month) => getByMonth(year, month)
-      .where((t) => t.type == TransactionType.ccPayment)
-      .fold(0.0, (s, t) => s + t.amount);
+  double monthlyBalance(int year, int month) =>
+      monthlyIncome(year, month) - monthlyExpense(year, month);
 
   Future<void> loadTransactions() async {
-    final userId = _currentUserId;
+    final userId = currentUserId;
     if (userId == null) {
-      _transactions = [];
+      transactions = [];
       notifyListeners();
       return;
     }
 
     final maps = await supabase
         .from(DbConstants.tTransactions)
-        .select('''
-          id,
-          user_id,
-          title,
-          subtitle,
-          amount,
-          type,
-          category_id,
-          category_name,
-          category_emoji,
-          account_id,
-          linked_credit_card_account_id,
-          date,
-          note,
-          created_at
-        ''')
+        .select()
         .eq(DbConstants.cUserId, userId)
         .order(DbConstants.cTxnDate, ascending: false);
 
-    _transactions = (maps as List)
+    transactions = (maps as List)
         .map((e) => TransactionModel.fromMap(Map<String, dynamic>.from(e)))
         .toList();
-
     notifyListeners();
   }
 
   Future<void> addTransaction(TransactionModel txn) async {
-    final userId = _currentUserId;
+    final userId = currentUserId;
     if (userId == null) throw Exception('User not logged in');
 
     final newTxn = txn.copyWith(userId: userId);
-    final map = Map<String, dynamic>.from(newTxn.toMap());
-
-    await supabase.from(DbConstants.tTransactions).insert(map);
-
-    _transactions.insert(0, newTxn);
+    await supabase.from(DbConstants.tTransactions).insert(newTxn.toMap());
+    transactions.insert(0, newTxn);
     notifyListeners();
   }
 
   Future<void> updateTransaction(TransactionModel txn) async {
-    final userId = _currentUserId;
+    final userId = currentUserId;
     if (userId == null) throw Exception('User not logged in');
 
     final updatedTxn = txn.copyWith(userId: userId);
-
-    final map = Map<String, dynamic>.from(updatedTxn.toMap());
-    map.remove(DbConstants.cId);
-    map.remove(DbConstants.cUserId);
-    map.remove(DbConstants.cCreatedAt);
-
     await supabase
         .from(DbConstants.tTransactions)
-        .update(map)
+        .update(updatedTxn.toMap())
         .eq(DbConstants.cId, updatedTxn.id)
         .eq(DbConstants.cUserId, userId);
 
-    final idx = _transactions.indexWhere((t) => t.id == updatedTxn.id);
-    if (idx != -1) {
-      _transactions[idx] = updatedTxn;
-      _transactions.sort((a, b) => b.date.compareTo(a.date));
-    }
-
+    final idx = transactions.indexWhere((t) => t.id == updatedTxn.id);
+    if (idx != -1) transactions[idx] = updatedTxn;
     notifyListeners();
   }
 
   Future<void> deleteTransaction(String id) async {
-    final userId = _currentUserId;
+    final userId = currentUserId;
     if (userId == null) throw Exception('User not logged in');
 
     await supabase
@@ -126,12 +113,12 @@ class TransactionProvider with ChangeNotifier {
         .eq(DbConstants.cId, id)
         .eq(DbConstants.cUserId, userId);
 
-    _transactions.removeWhere((t) => t.id == id);
+    transactions.removeWhere((t) => t.id == id);
     notifyListeners();
   }
 
   Future<void> deleteByAccount(String accountId) async {
-    final userId = _currentUserId;
+    final userId = currentUserId;
     if (userId == null) throw Exception('User not logged in');
 
     await supabase
@@ -140,7 +127,20 @@ class TransactionProvider with ChangeNotifier {
         .eq(DbConstants.cTxnAccId, accountId)
         .eq(DbConstants.cUserId, userId);
 
-    _transactions.removeWhere((t) => t.accountId == accountId);
+    transactions.removeWhere((t) => t.accountId == accountId);
+    notifyListeners();
+  }
+
+  Future<void> clearAll() async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('User not logged in');
+
+    await supabase
+        .from(DbConstants.tTransactions)
+        .delete()
+        .eq(DbConstants.cUserId, userId);
+
+    transactions.clear();
     notifyListeners();
   }
 }

@@ -62,6 +62,7 @@ class LoanModel {
   final String id;
   final String userId;
   final String personId;
+  final String accountId;
   final LoanType type;
   final double principal;
   final double interestRate;
@@ -82,6 +83,7 @@ class LoanModel {
     String? id,
     required this.userId,
     required this.personId,
+    required this.accountId,
     required this.type,
     required this.principal,
     this.interestRate = 0,
@@ -270,6 +272,7 @@ class LoanModel {
   LoanModel copyWith({
     String? userId,
     String? personId,
+    String? accountId,
     LoanType? type,
     double? principal,
     double? interestRate,
@@ -288,6 +291,7 @@ class LoanModel {
         id: id,
         userId: userId ?? this.userId,
         personId: personId ?? this.personId,
+        accountId: accountId ?? this.accountId,
         type: type ?? this.type,
         principal: principal ?? this.principal,
         interestRate: interestRate ?? this.interestRate,
@@ -309,6 +313,7 @@ class LoanModel {
         DbConstants.cId: id,
         DbConstants.cUserId: userId,
         DbConstants.cLoanPersonId: personId,
+        DbConstants.cLoanAccountId: accountId,
         DbConstants.cLoanType: type.name,
         DbConstants.cLoanPrincipal: principal,
         DbConstants.cLoanInterestRate: interestRate,
@@ -327,27 +332,31 @@ class LoanModel {
       };
 
   factory LoanModel.fromMap(Map<String, dynamic> map) => LoanModel(
-        id: map[DbConstants.cId],
-        userId: map[DbConstants.cUserId] ?? '',
-        personId: map[DbConstants.cLoanPersonId],
-        type: LoanType.values.byName(map[DbConstants.cLoanType]),
+        id: map[DbConstants.cId] as String,
+        userId: (map[DbConstants.cUserId] ?? '') as String,
+        personId: map[DbConstants.cLoanPersonId] as String,
+        accountId: (map[DbConstants.cLoanAccountId] ?? '') as String,
+        type: LoanType.values.byName(map[DbConstants.cLoanType] as String),
         principal: (map[DbConstants.cLoanPrincipal] as num).toDouble(),
-        interestRate: (map[DbConstants.cLoanInterestRate] as num).toDouble(),
-        interestType:
-            InterestType.values.byName(map[DbConstants.cLoanInterestType]),
-        period: InterestPeriod.values.byName(map[DbConstants.cLoanPeriod]),
-        startDate: DateTime.parse(map[DbConstants.cLoanStartDate]),
+        interestRate:
+            ((map[DbConstants.cLoanInterestRate] ?? 0) as num).toDouble(),
+        interestType: InterestType.values
+            .byName(map[DbConstants.cLoanInterestType] as String),
+        period: InterestPeriod.values
+            .byName(map[DbConstants.cLoanPeriod] as String),
+        startDate: DateTime.parse(map[DbConstants.cLoanStartDate] as String),
         endDate: map[DbConstants.cLoanEndDate] != null
-            ? DateTime.parse(map[DbConstants.cLoanEndDate])
+            ? DateTime.parse(map[DbConstants.cLoanEndDate] as String)
             : null,
-        paymentStyle:
-            PaymentStyle.values.byName(map[DbConstants.cLoanPaymentStyle]),
-        emiAmount: (map[DbConstants.cLoanEmiAmount] as num).toDouble(),
-        emiDay: map[DbConstants.cLoanEmiDay] as int,
-        totalMonths: map[DbConstants.cLoanTotalMonths] as int,
-        status: LoanStatus.values.byName(map[DbConstants.cLoanStatus]),
-        note: map[DbConstants.cLoanNote],
-        createdAt: DateTime.parse(map[DbConstants.cCreatedAt]),
-        updatedAt: DateTime.parse(map[DbConstants.cUpdatedAt]),
+        paymentStyle: PaymentStyle.values
+            .byName(map[DbConstants.cLoanPaymentStyle] as String),
+        emiAmount: ((map[DbConstants.cLoanEmiAmount] ?? 0) as num).toDouble(),
+        emiDay: (map[DbConstants.cLoanEmiDay] ?? 1) as int,
+        totalMonths: (map[DbConstants.cLoanTotalMonths] ?? 0) as int,
+        status:
+            LoanStatus.values.byName(map[DbConstants.cLoanStatus] as String),
+        note: map[DbConstants.cLoanNote] as String?,
+        createdAt: DateTime.parse(map[DbConstants.cCreatedAt] as String),
+        updatedAt: DateTime.parse(map[DbConstants.cUpdatedAt] as String),
       );
 }

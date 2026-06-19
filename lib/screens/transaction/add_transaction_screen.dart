@@ -148,6 +148,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen>
         return 1;
       case TransactionType.ccPayment:
         return 2;
+      case TransactionType.loanGiven:
+        // TODO: Handle this case.
+        throw UnimplementedError();
+      case TransactionType.loanTaken:
+        // TODO: Handle this case.
+        throw UnimplementedError();
     }
   }
 

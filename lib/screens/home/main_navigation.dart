@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
 import '../../core/app_colors.dart';
 import '../../core/app_strings.dart';
 import '../../models/transaction_model.dart';
 import '../../providers/transaction_provider.dart';
 import '../home/home_screen.dart';
-import '../transaction/transaction_list_screen.dart';
-import '../transaction/add_transaction_screen.dart';
 import '../ledger/ledger_screen.dart';
 import '../reports/reports_screen.dart';
 import '../settings/settings_screen.dart';
+import '../transaction/add_transaction_screen.dart';
+import '../transaction/transaction_list_screen.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -166,7 +167,6 @@ class _MainNavigationState extends State<MainNavigation> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Single handle bar
             Container(
               width: 40,
               height: 4,
@@ -187,7 +187,6 @@ class _MainNavigationState extends State<MainNavigation> {
             const SizedBox(height: 20),
             Row(
               children: [
-                // ── આવક ──
                 Expanded(
                   child: _AddOptionCard(
                     iconWidget: Icon(
@@ -204,7 +203,6 @@ class _MainNavigationState extends State<MainNavigation> {
                         context,
                         MaterialPageRoute(
                           builder: (_) => const AddTransactionScreen(
-                            // ✅ FIX 1: String → TransactionType enum
                             initialType: TransactionType.income,
                           ),
                         ),
@@ -219,8 +217,6 @@ class _MainNavigationState extends State<MainNavigation> {
                   ),
                 ),
                 const SizedBox(width: 12),
-
-                // ── ખર્ચ ──
                 Expanded(
                   child: _AddOptionCard(
                     iconWidget: Icon(
@@ -237,7 +233,6 @@ class _MainNavigationState extends State<MainNavigation> {
                         context,
                         MaterialPageRoute(
                           builder: (_) => const AddTransactionScreen(
-                            // ✅ FIX 1: String → TransactionType enum
                             initialType: TransactionType.expense,
                           ),
                         ),
@@ -251,12 +246,14 @@ class _MainNavigationState extends State<MainNavigation> {
                     },
                   ),
                 ),
-                const SizedBox(width: 12),
-
-                // ── ઉધાર ──
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
                 Expanded(
                   child: _AddOptionCard(
-                    iconWidget: Text(
+                    iconWidget: const Text(
                       '🤝',
                       style: TextStyle(fontSize: 30),
                     ),
@@ -265,8 +262,37 @@ class _MainNavigationState extends State<MainNavigation> {
                     bgColor: AppColors.accentLight,
                     onTap: () {
                       Navigator.pop(ctx);
-                      // ✅ FIX 2: AddLoanScreen(personId) error → tab switch
                       setState(() => _currentIndex = 2);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _AddOptionCard(
+                    iconWidget: Icon(
+                      Icons.credit_card_rounded,
+                      color: AppColors.primary,
+                      size: 32,
+                    ),
+                    label: 'કાર્ડ બિલ',
+                    color: AppColors.primary,
+                    bgColor: AppColors.primarySurface,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AddTransactionScreen(
+                            initialType: TransactionType.ccPayment,
+                          ),
+                        ),
+                      ).then((_) {
+                        if (mounted) {
+                          context
+                              .read<TransactionProvider>()
+                              .loadTransactions();
+                        }
+                      });
                     },
                   ),
                 ),
@@ -280,7 +306,6 @@ class _MainNavigationState extends State<MainNavigation> {
   }
 }
 
-// ── Nav Item ───────────────────────────────────
 class _NavItem extends StatelessWidget {
   final IconData icon;
   final IconData iconOutline;
@@ -342,9 +367,9 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-// ── Center Add Button ──────────────────────────
 class _AddButton extends StatelessWidget {
   final VoidCallback onTap;
+
   const _AddButton({required this.onTap});
 
   @override
@@ -375,7 +400,6 @@ class _AddButton extends StatelessWidget {
   }
 }
 
-// ── Add Option Card ────────────────────────────
 class _AddOptionCard extends StatelessWidget {
   final Widget iconWidget;
   final String label;

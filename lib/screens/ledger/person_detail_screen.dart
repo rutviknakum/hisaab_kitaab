@@ -890,11 +890,16 @@ class _EmiRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPaid = emi['is_paid'] as bool;
-    final isOverdue = emi['is_overdue'] as bool;
-    final dueDate = emi['due_date'] as DateTime;
-    final amount = emi['amount'] as double;
-    final month = emi['month'] as int;
+    final isPaid = (emi['is_paid'] as bool?) ?? false;
+    final isOverdue = (emi['is_overdue'] as bool?) ?? false;
+
+    final rawDueDate = emi['due_date'];
+    final dueDate = rawDueDate is DateTime
+        ? rawDueDate
+        : DateTime.tryParse(rawDueDate?.toString() ?? '') ?? DateTime.now();
+
+    final amount = ((emi['amount'] ?? 0) as num).toDouble();
+    final month = ((emi['month'] ?? 0) as num).toInt();
 
     Color statusColor;
     String statusIcon;

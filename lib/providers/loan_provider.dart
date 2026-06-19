@@ -1,11 +1,17 @@
 import 'package:flutter/foundation.dart';
+
+import '../database/database_helper.dart';
 import '../database/db_constants.dart';
 import '../models/ledger_person_model.dart';
 import '../models/loan_model.dart';
 import '../models/loan_payment_model.dart';
-import '../main.dart';
+import '../models/transaction_model.dart';
+import 'account_provider.dart';
+import 'transaction_provider.dart';
 
 class LoanProvider with ChangeNotifier {
+  final DatabaseHelper db = DatabaseHelper.instance;
+
   List<LedgerPersonModel> _persons = [];
   List<LoanModel> _loans = [];
   List<LoanPaymentModel> _payments = [];
@@ -14,50 +20,27 @@ class LoanProvider with ChangeNotifier {
   List<LoanModel> get loans => List.unmodifiable(_loans);
   List<LoanPaymentModel> get payments => List.unmodifiable(_payments);
 
-  String? get _currentUserId => supabase.auth.currentUser?.id;
-
   Future<void> loadAll() async {
-    final userId = _currentUserId;
-    if (userId == null) {
-      _persons = [];
-      _loans = [];
-      _payments = [];
-      notifyListeners();
-      return;
-    }
+    final pMaps = await db.getAll(
+      DbConstants.tPersons,
+      orderBy: DbConstants.cPerName,
+    );
+    final lMaps = await db.getAll(
+      DbConstants.tLoans,
+      orderBy: '${DbConstants.cLoanStartDate} DESC',
+    );
+    final pyMaps = await db.getAll(
+      DbConstants.tPayments,
+      orderBy: '${DbConstants.cPayDate} DESC',
+    );
 
-    final pMaps = await supabase
-        .from(DbConstants.tPersons)
-        .select()
-        .eq(DbConstants.cUserId, userId)
-        .order(DbConstants.cPerName, ascending: true);
-
-    final lMaps = await supabase
-        .from(DbConstants.tLoans)
-        .select()
-        .eq(DbConstants.cUserId, userId)
-        .order(DbConstants.cLoanStartDate, ascending: true);
-
-    final pyMaps = await supabase
-        .from(DbConstants.tPayments)
-        .select()
-        .eq(DbConstants.cUserId, userId)
-        .order(DbConstants.cPayDate, ascending: true);
-
-    _persons = (pMaps as List)
-        .map((e) => LedgerPersonModel.fromMap(Map<String, dynamic>.from(e)))
-        .toList();
-
-    _loans = (lMaps as List)
-        .map((e) => LoanModel.fromMap(Map<String, dynamic>.from(e)))
-        .toList();
-
-    _payments = (pyMaps as List)
-        .map((e) => LoanPaymentModel.fromMap(Map<String, dynamic>.from(e)))
-        .toList();
-
+    _persons = pMaps.map((e) => LedgerPersonModel.fromMap(e)).toList();
+    _loans = lMaps.map((e) => LoanModel.fromMap(e)).toList();
+    _payments = pyMaps.map((e) => LoanPaymentModel.fromMap(e)).toList();
     notifyListeners();
   }
+
+  Future<void> refresh() async => loadAll();
 
   LedgerPersonModel? getPersonById(String id) {
     try {
@@ -67,208 +50,260 @@ class LoanProvider with ChangeNotifier {
     }
   }
 
-  List<LoanModel> loansOfPerson(String personId) =>
-      _loans.where((l) => l.personId == personId).toList();
-
-  List<LoanModel> activeLoansOfPerson(String personId) => _loans
-      .where((l) => l.personId == personId && l.status == LoanStatus.active)
-      .toList();
-
-  double personNetBalance(String personId) {
-    final personLoans = loansOfPerson(personId);
-    double total = 0;
-    for (final loan in personLoans) {
-      final outstanding = outstandingAmount(loan.id);
-      if (outstanding <= 0) continue;
-      total += loan.type == LoanType.gave ? outstanding : -outstanding;
+  LoanModel? getLoanById(String id) {
+    try {
+      return _loans.firstWhere((l) => l.id == id);
+    } catch (_) {
+      return null;
     }
-    return total;
   }
+
+  List<LoanModel> loansOfPerson(String personId) =>
+      _loans.where((l) => l.personId == personId).toList()
+        ..sort((a, b) => b.startDate.compareTo(a.startDate));
+
+  List<LoanModel> activeLoansOfPerson(String personId) =>
+      loansOfPerson(personId)
+          .where((l) => l.status == LoanStatus.active)
+          .toList();
 
   List<LoanPaymentModel> paymentsOfLoan(String loanId) =>
       _payments.where((p) => p.loanId == loanId).toList()
         ..sort((a, b) => b.paymentDate.compareTo(a.paymentDate));
 
-  double totalPaid(String loanId) => _payments
-      .where((p) => p.loanId == loanId)
-      .fold(0, (s, p) => s + p.amount);
-
-  double _reducingOutstandingAmount(LoanModel loan) {
-    final schedule = loan.reducingSchedule();
-    final paidTotal = totalPaid(loan.id);
-
-    double paidLeft = paidTotal;
-    double remaining = 0;
-
-    for (final row in schedule) {
-      final installment = row['amount'] as double;
-
-      if (paidLeft >= installment) {
-        paidLeft -= installment;
-      } else {
-        remaining += (installment - paidLeft);
-        paidLeft = 0;
-      }
-    }
-
-    return remaining < 0 ? 0 : remaining;
+  double totalPaid(String loanId) {
+    return _payments
+        .where((p) => p.loanId == loanId)
+        .fold(0.0, (sum, p) => sum + p.amount);
   }
 
   double outstandingAmount(String loanId) {
-    final loan = _loans.firstWhere(
-      (l) => l.id == loanId,
-      orElse: () => throw Exception('Loan not found'),
-    );
-
-    if (loan.interestType == InterestType.reducing &&
-        loan.paymentStyle == PaymentStyle.fixed &&
-        loan.totalMonths > 0) {
-      return _reducingOutstandingAmount(loan);
-    }
-
-    final paid = totalPaid(loanId);
-    final outstanding = loan.totalAmount - paid;
-    return outstanding < 0 ? 0 : outstanding;
+    final loan = getLoanById(loanId);
+    if (loan == null) return 0.0;
+    final out = loan.totalAmount - totalPaid(loanId);
+    return out < 0 ? 0.0 : out;
   }
 
+  double personNetBalance(String personId) {
+    double net = 0.0;
+    for (final loan in loansOfPerson(personId)) {
+      final out = outstandingAmount(loan.id);
+      if (loan.type == LoanType.gave) {
+        net += out;
+      } else {
+        net -= out;
+      }
+    }
+    return net;
+  }
+
+  double get totalToReceive => _loans
+      .where((l) => l.type == LoanType.gave && l.status == LoanStatus.active)
+      .fold(0.0, (sum, l) => sum + outstandingAmount(l.id));
+
+  double get totalToPay => _loans
+      .where((l) => l.type == LoanType.took && l.status == LoanStatus.active)
+      .fold(0.0, (sum, l) => sum + outstandingAmount(l.id));
+
   List<Map<String, dynamic>> emiSchedule(LoanModel loan) {
-    if (loan.paymentStyle != PaymentStyle.fixed || loan.totalMonths == 0) {
+    if (loan.paymentStyle != PaymentStyle.fixed || loan.totalMonths <= 0) {
       return [];
     }
 
-    final payments = paymentsOfLoan(loan.id);
+    final paidAmount = totalPaid(loan.id);
+    final now = DateTime.now();
 
     if (loan.interestType == InterestType.reducing) {
       final base = loan.reducingSchedule();
+      double consumed = 0.0;
 
       return base.map((row) {
+        final amount = ((row['amount'] ?? 0) as num).toDouble();
         final dueDate = row['due_date'] as DateTime;
-        final paid = payments.any(
-          (p) => p.paymentDate.difference(dueDate).inDays.abs() <= 5,
-        );
+        consumed += amount;
+
+        final isPaid = consumed <= paidAmount + 0.01;
+        final isOverdue = !isPaid && dueDate.isBefore(now);
 
         return {
           ...row,
-          'is_paid': paid,
-          'is_overdue': !paid && dueDate.isBefore(DateTime.now()),
+          'is_paid': isPaid,
+          'is_overdue': isOverdue,
         };
       }).toList();
     }
 
-    final schedule = <Map<String, dynamic>>[];
+    double consumed = 0.0;
 
-    for (var i = 0; i < loan.totalMonths; i++) {
+    return List.generate(loan.totalMonths, (i) {
       final dueDate = DateTime(
         loan.startDate.year,
         loan.startDate.month + i + 1,
         loan.emiDay,
       );
 
-      final paid = payments.any(
-        (p) => p.paymentDate.difference(dueDate).inDays.abs() <= 5,
-      );
+      final amount = loan.emiAmount;
+      consumed += amount;
 
-      schedule.add({
+      final isPaid = consumed <= paidAmount + 0.01;
+      final isOverdue = !isPaid && dueDate.isBefore(now);
+
+      return {
         'month': i + 1,
+        'opening_balance': null,
+        'interest': null,
+        'principal': null,
+        'amount': amount,
+        'closing_balance': null,
         'due_date': dueDate,
-        'amount': loan.emiAmount,
-        'is_paid': paid,
-        'is_overdue': !paid && dueDate.isBefore(DateTime.now()),
-      });
+        'is_paid': isPaid,
+        'is_overdue': isOverdue,
+      };
+    });
+  }
+
+  List<Map<String, dynamic>> get overdueEmis {
+    final items = <Map<String, dynamic>>[];
+
+    for (final loan in _loans) {
+      if (loan.status != LoanStatus.active) continue;
+      if (loan.paymentStyle != PaymentStyle.fixed) continue;
+
+      final schedule = emiSchedule(loan);
+      for (final emi in schedule) {
+        if (((emi['is_overdue'] as bool?) ?? false) == true) {
+          items.add({
+            'loan': loan,
+            'person': getPersonById(loan.personId),
+            'due_date': emi['due_date'],
+            'amount': emi['amount'],
+            'month': emi['month'],
+          });
+        }
+      }
     }
 
-    return schedule;
+    items.sort((a, b) {
+      final ad = a['due_date'] as DateTime;
+      final bd = b['due_date'] as DateTime;
+      return ad.compareTo(bd);
+    });
+
+    return items;
   }
 
   Future<void> addPerson(LedgerPersonModel person) async {
-    final userId = _currentUserId;
-    if (userId == null) throw Exception('User not logged in');
-
-    final newPerson = person.copyWith(userId: userId);
-
-    await supabase.from(DbConstants.tPersons).insert(newPerson.toMap());
-    _persons.add(newPerson);
-    _persons.sort((a, b) => a.name.compareTo(b.name));
+    await db.insert(DbConstants.tPersons, person.toMap());
+    _persons.add(person);
+    _persons
+        .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     notifyListeners();
   }
 
   Future<void> updatePerson(LedgerPersonModel person) async {
-    final userId = _currentUserId;
-    if (userId == null) throw Exception('User not logged in');
-
-    final updatedPerson = person.copyWith(userId: userId);
-
-    await supabase
-        .from(DbConstants.tPersons)
-        .update(updatedPerson.toMap())
-        .eq(DbConstants.cId, updatedPerson.id)
-        .eq(DbConstants.cUserId, userId);
-
-    final idx = _persons.indexWhere((p) => p.id == updatedPerson.id);
-    if (idx != -1) _persons[idx] = updatedPerson;
+    await db.update(DbConstants.tPersons, person.toMap(), person.id);
+    final idx = _persons.indexWhere((p) => p.id == person.id);
+    if (idx != -1) {
+      _persons[idx] = person;
+      _persons
+          .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    }
     notifyListeners();
   }
 
-  Future<void> deletePerson(String id) async {
-    final userId = _currentUserId;
-    if (userId == null) throw Exception('User not logged in');
+  Future<void> deletePerson(
+    String personId, {
+    AccountProvider? accountProvider,
+    TransactionProvider? transactionProvider,
+  }) async {
+    final relatedLoans = loansOfPerson(personId);
+    for (final loan in relatedLoans) {
+      await deleteLoan(
+        loan.id,
+        accountProvider: accountProvider,
+        transactionProvider: transactionProvider,
+      );
+    }
+    await db.delete(DbConstants.tPersons, personId);
+    _persons.removeWhere((p) => p.id == personId);
+    notifyListeners();
+  }
 
-    final activeLoans = activeLoansOfPerson(id);
-    if (activeLoans.isNotEmpty) {
-      throw Exception(
-        'Active loan હોય ત્યાં સુધી વ્યક્તિ delete કરી શકાતી નથી.',
+  Future<void> addLoan(
+    LoanModel loan, {
+    AccountProvider? accountProvider,
+    TransactionProvider? transactionProvider,
+  }) async {
+    await db.insert(DbConstants.tLoans, loan.toMap());
+    _loans.add(loan);
+
+    final person = getPersonById(loan.personId);
+
+    if (accountProvider != null && loan.accountId.isNotEmpty) {
+      await accountProvider.adjustBalance(
+        accountId: loan.accountId,
+        amount: loan.principal,
+        add: loan.type == LoanType.took,
       );
     }
 
-    final personLoans = loansOfPerson(id);
-    for (final loan in personLoans) {
-      await _deleteAllPaymentsOfLoan(loan.id);
+    if (transactionProvider != null && loan.accountId.isNotEmpty) {
+      final txn = TransactionModel(
+        userId: loan.userId,
+        title: loan.type == LoanType.gave ? 'લોન આપ્યું' : 'લોન લીધું',
+        subtitle: person?.name ?? 'Loan entry',
+        amount: loan.principal,
+        type: loan.type == LoanType.gave
+            ? TransactionType.loanGiven
+            : TransactionType.loanTaken,
+        categoryId: null,
+        categoryName: 'લોન',
+        categoryEmoji: loan.type == LoanType.gave ? '💸' : '🤲',
+        accountId: loan.accountId,
+        linkedCreditCardAccountId: null,
+        date: loan.startDate,
+        note: loan.note,
+      );
+      await transactionProvider.addTransaction(txn);
     }
 
-    await supabase
-        .from(DbConstants.tLoans)
-        .delete()
-        .eq(DbConstants.cLoanPersonId, id)
-        .eq(DbConstants.cUserId, userId);
-
-    await supabase
-        .from(DbConstants.tPersons)
-        .delete()
-        .eq(DbConstants.cId, id)
-        .eq(DbConstants.cUserId, userId);
-
-    _persons.removeWhere((p) => p.id == id);
-    _loans.removeWhere((l) => l.personId == id);
-    _payments
-        .removeWhere((p) => personLoans.any((loan) => loan.id == p.loanId));
     notifyListeners();
   }
 
-  Future<void> addLoan(LoanModel loan) async {
-    final userId = _currentUserId;
-    if (userId == null) throw Exception('User not logged in');
-
-    final newLoan = loan.copyWith(userId: userId);
-
-    await supabase.from(DbConstants.tLoans).insert(newLoan.toMap());
-    _loans.add(newLoan);
-    notifyListeners();
-  }
-
-  Future<void> updateLoan(LoanModel loan) async {
-    final userId = _currentUserId;
-    if (userId == null) throw Exception('User not logged in');
-
-    final updatedLoan = loan.copyWith(userId: userId);
-
-    await supabase
-        .from(DbConstants.tLoans)
-        .update(updatedLoan.toMap())
-        .eq(DbConstants.cId, updatedLoan.id)
-        .eq(DbConstants.cUserId, userId);
-
+  Future<void> updateLoan(
+    LoanModel updatedLoan, {
+    AccountProvider? accountProvider,
+  }) async {
     final idx = _loans.indexWhere((l) => l.id == updatedLoan.id);
-    if (idx != -1) _loans[idx] = updatedLoan;
+    if (idx == -1) return;
+
+    final oldLoan = _loans[idx];
+    await db.update(DbConstants.tLoans, updatedLoan.toMap(), updatedLoan.id);
+    _loans[idx] = updatedLoan;
+
+    if (accountProvider != null) {
+      final meaningfullyChanged = oldLoan.accountId != updatedLoan.accountId ||
+          oldLoan.principal != updatedLoan.principal ||
+          oldLoan.type != updatedLoan.type;
+
+      if (meaningfullyChanged) {
+        if (oldLoan.accountId.isNotEmpty) {
+          await accountProvider.adjustBalance(
+            accountId: oldLoan.accountId,
+            amount: oldLoan.principal,
+            add: oldLoan.type == LoanType.gave,
+          );
+        }
+        if (updatedLoan.accountId.isNotEmpty) {
+          await accountProvider.adjustBalance(
+            accountId: updatedLoan.accountId,
+            amount: updatedLoan.principal,
+            add: updatedLoan.type == LoanType.took,
+          );
+        }
+      }
+    }
+
     notifyListeners();
   }
 
@@ -276,165 +311,224 @@ class LoanProvider with ChangeNotifier {
     final idx = _loans.indexWhere((l) => l.id == loanId);
     if (idx == -1) return;
 
-    final updated = _loans[idx].copyWith(status: LoanStatus.closed);
-    await updateLoan(updated);
-  }
+    final current = _loans[idx];
+    if (current.status == LoanStatus.closed) return;
 
-  Future<void> deleteLoan(String id) async {
-    final userId = _currentUserId;
-    if (userId == null) throw Exception('User not logged in');
-
-    await _deleteAllPaymentsOfLoan(id);
-
-    await supabase
-        .from(DbConstants.tLoans)
-        .delete()
-        .eq(DbConstants.cId, id)
-        .eq(DbConstants.cUserId, userId);
-
-    _loans.removeWhere((l) => l.id == id);
+    final updated = current.copyWith(status: LoanStatus.closed);
+    await db.update(DbConstants.tLoans, updated.toMap(), updated.id);
+    _loans[idx] = updated;
     notifyListeners();
   }
 
-  Future<void> addPayment(LoanPaymentModel payment) async {
-    final userId = _currentUserId;
-    if (userId == null) throw Exception('User not logged in');
+  Future<void> reopenLoan(String loanId) async {
+    final idx = _loans.indexWhere((l) => l.id == loanId);
+    if (idx == -1) return;
 
-    if (payment.accountId.isEmpty) {
-      throw Exception('Account પસંદ કરો');
-    }
+    final current = _loans[idx];
+    if (current.status == LoanStatus.active) return;
 
-    final newPayment = LoanPaymentModel(
-      id: payment.id,
-      userId: userId,
-      loanId: payment.loanId,
-      amount: payment.amount,
-      paymentDate: payment.paymentDate,
-      towards: payment.towards,
-      note: payment.note,
-      accountId: payment.accountId,
-      createdAt: payment.createdAt,
-    );
-
-    await supabase.from(DbConstants.tPayments).insert(newPayment.toMap());
-    _payments.add(newPayment);
-
-    final outstanding = outstandingAmount(newPayment.loanId);
-    if (outstanding <= 0) {
-      await closeLoan(newPayment.loanId);
-    }
-
+    final updated = current.copyWith(status: LoanStatus.active);
+    await db.update(DbConstants.tLoans, updated.toMap(), updated.id);
+    _loans[idx] = updated;
     notifyListeners();
   }
 
-  Future<void> deletePayment(String id) async {
-    final userId = _currentUserId;
-    if (userId == null) throw Exception('User not logged in');
+  Future<void> deleteLoan(
+    String loanId, {
+    AccountProvider? accountProvider,
+    TransactionProvider? transactionProvider,
+  }) async {
+    final loan = getLoanById(loanId);
+    if (loan == null) return;
 
-    final payment = _payments.firstWhere((p) => p.id == id);
+    final person = getPersonById(loan.personId);
+    final relatedPayments = paymentsOfLoan(loanId);
 
-    await supabase
-        .from(DbConstants.tPayments)
-        .delete()
-        .eq(DbConstants.cId, id)
-        .eq(DbConstants.cUserId, userId);
-
-    _payments.removeWhere((p) => p.id == id);
-
-    final loan = _loans.firstWhere(
-      (l) => l.id == payment.loanId,
-      orElse: () => throw Exception('Loan not found'),
-    );
-
-    if (loan.status == LoanStatus.closed) {
-      await updateLoan(loan.copyWith(status: LoanStatus.active));
-    }
-
-    notifyListeners();
-  }
-
-  Future<void> _deleteAllPaymentsOfLoan(String loanId) async {
-    final userId = _currentUserId;
-    if (userId == null) throw Exception('User not logged in');
-
-    await supabase
-        .from(DbConstants.tPayments)
-        .delete()
-        .eq(DbConstants.cPayLoanId, loanId)
-        .eq(DbConstants.cUserId, userId);
-
-    _payments.removeWhere((p) => p.loanId == loanId);
-  }
-
-  double get totalToReceive {
-    double total = 0;
-    for (final loan in _loans.where(
-      (l) => l.type == LoanType.gave && l.status == LoanStatus.active,
-    )) {
-      final outstanding = outstandingAmount(loan.id);
-      if (outstanding > 0) total += outstanding;
-    }
-    return total;
-  }
-
-  double get totalToPay {
-    double total = 0;
-    for (final loan in _loans.where(
-      (l) => l.type == LoanType.took && l.status == LoanStatus.active,
-    )) {
-      final outstanding = outstandingAmount(loan.id);
-      if (outstanding > 0) total += outstanding;
-    }
-    return total;
-  }
-
-  List<Map<String, dynamic>> get overdueEmis {
-    final overdue = <Map<String, dynamic>>[];
-
-    for (final loan in _loans.where(
-      (l) =>
-          l.paymentStyle == PaymentStyle.fixed && l.status == LoanStatus.active,
-    )) {
-      final schedule = emiSchedule(loan);
-
-      for (final emi in schedule) {
-        if (emi['is_overdue'] == true) {
-          final person = getPersonById(loan.personId);
-          overdue.add({
-            'loan': loan,
-            'person': person,
-            'due_date': emi['due_date'],
-            'amount': emi['amount'],
-          });
+    if (accountProvider != null) {
+      for (final payment in relatedPayments) {
+        if (payment.accountId.isNotEmpty) {
+          await accountProvider.adjustBalance(
+            accountId: payment.accountId,
+            amount: payment.amount,
+            add: loan.type == LoanType.took,
+          );
         }
+      }
+
+      if (loan.accountId.isNotEmpty) {
+        await accountProvider.adjustBalance(
+          accountId: loan.accountId,
+          amount: loan.principal,
+          add: loan.type == LoanType.gave,
+        );
       }
     }
 
-    return overdue;
+    if (transactionProvider != null && loan.accountId.isNotEmpty) {
+      final deletedTxn = TransactionModel(
+        userId: loan.userId,
+        title: loan.type == LoanType.gave
+            ? 'લોન ડિલીટ કર્યું'
+            : 'લીધી લોન ડિલીટ કરી',
+        subtitle: person?.name ?? 'Loan deleted',
+        amount: loan.principal,
+        type: loan.type == LoanType.gave
+            ? TransactionType.income
+            : TransactionType.expense,
+        categoryId: null,
+        categoryName: 'ડિલીટેડ લોન',
+        categoryEmoji: '🗑️',
+        accountId: loan.accountId,
+        linkedCreditCardAccountId: null,
+        date: DateTime.now(),
+        note: 'Deleted loan rollback entry',
+      );
+      await transactionProvider.addTransaction(deletedTxn);
+
+      for (final payment in relatedPayments) {
+        final paymentTxn = TransactionModel(
+          userId: payment.userId,
+          title: 'લોન પેમેન્ટ ડિલીટ થયું',
+          subtitle: person?.name ?? 'Loan payment deleted',
+          amount: payment.amount,
+          type: loan.type == LoanType.gave
+              ? TransactionType.expense
+              : TransactionType.income,
+          categoryId: null,
+          categoryName: 'ડિલીટેડ પેમેન્ટ',
+          categoryEmoji: '↩️',
+          accountId: payment.accountId,
+          linkedCreditCardAccountId: null,
+          date: DateTime.now(),
+          note: 'Deleted loan payment rollback entry',
+        );
+        await transactionProvider.addTransaction(paymentTxn);
+      }
+    }
+
+    await deleteAllPaymentsOfLoan(loanId);
+    await db.delete(DbConstants.tLoans, loanId);
+    _loans.removeWhere((l) => l.id == loanId);
+
+    notifyListeners();
   }
 
-  Future<void> clearAll() async {
-    final userId = _currentUserId;
-    if (userId == null) throw Exception('User not logged in');
+  Future<void> addPayment(
+    LoanPaymentModel payment, {
+    AccountProvider? accountProvider,
+    TransactionProvider? transactionProvider,
+  }) async {
+    await db.insert(DbConstants.tPayments, payment.toMap());
+    _payments.add(payment);
 
-    await supabase
-        .from(DbConstants.tPayments)
-        .delete()
-        .eq(DbConstants.cUserId, userId);
+    final loan = getLoanById(payment.loanId);
+    final person = loan != null ? getPersonById(loan.personId) : null;
 
-    await supabase
-        .from(DbConstants.tLoans)
-        .delete()
-        .eq(DbConstants.cUserId, userId);
+    if (loan != null &&
+        accountProvider != null &&
+        payment.accountId.isNotEmpty) {
+      await accountProvider.adjustBalance(
+        accountId: payment.accountId,
+        amount: payment.amount,
+        add: loan.type == LoanType.gave,
+      );
+    }
 
-    await supabase
-        .from(DbConstants.tPersons)
-        .delete()
-        .eq(DbConstants.cUserId, userId);
+    if (loan != null &&
+        transactionProvider != null &&
+        payment.accountId.isNotEmpty) {
+      final txn = TransactionModel(
+        userId: payment.userId,
+        title: loan.type == LoanType.gave ? 'લોન વસૂલ્યું' : 'લોન ભર્યું',
+        subtitle: person?.name ?? 'Loan payment',
+        amount: payment.amount,
+        type: loan.type == LoanType.gave
+            ? TransactionType.income
+            : TransactionType.expense,
+        categoryId: null,
+        categoryName: 'લોન પેમેન્ટ',
+        categoryEmoji: '💰',
+        accountId: payment.accountId,
+        linkedCreditCardAccountId: null,
+        date: payment.paymentDate,
+        note: payment.note,
+      );
+      await transactionProvider.addTransaction(txn);
+    }
 
-    _payments.clear();
-    _loans.clear();
-    _persons.clear();
+    final outstanding = outstandingAmount(payment.loanId);
+    if (outstanding <= 0.01) {
+      await closeLoan(payment.loanId);
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> deletePayment(
+    String paymentId, {
+    AccountProvider? accountProvider,
+    TransactionProvider? transactionProvider,
+  }) async {
+    final idx = _payments.indexWhere((p) => p.id == paymentId);
+    if (idx == -1) return;
+
+    final payment = _payments[idx];
+    final loan = getLoanById(payment.loanId);
+    final person = loan != null ? getPersonById(loan.personId) : null;
+
+    await db.delete(DbConstants.tPayments, paymentId);
+    _payments.removeAt(idx);
+
+    if (loan != null &&
+        accountProvider != null &&
+        payment.accountId.isNotEmpty) {
+      await accountProvider.adjustBalance(
+        accountId: payment.accountId,
+        amount: payment.amount,
+        add: loan.type == LoanType.took,
+      );
+    }
+
+    if (loan != null &&
+        transactionProvider != null &&
+        payment.accountId.isNotEmpty) {
+      final txn = TransactionModel(
+        userId: payment.userId,
+        title: 'લોન પેમેન્ટ ડિલીટ થયું',
+        subtitle: person?.name ?? 'Loan payment deleted',
+        amount: payment.amount,
+        type: loan.type == LoanType.gave
+            ? TransactionType.expense
+            : TransactionType.income,
+        categoryId: null,
+        categoryName: 'ડિલીટેડ પેમેન્ટ',
+        categoryEmoji: '↩️',
+        accountId: payment.accountId,
+        linkedCreditCardAccountId: null,
+        date: DateTime.now(),
+        note: 'Deleted payment rollback entry',
+      );
+      await transactionProvider.addTransaction(txn);
+    }
+
+    if (loan != null && loan.status == LoanStatus.closed) {
+      final outstanding = outstandingAmount(loan.id);
+      if (outstanding > 0.01) {
+        await reopenLoan(loan.id);
+      }
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> deleteAllPaymentsOfLoan(String loanId) async {
+    final dbRaw = await db.database;
+    await dbRaw.delete(
+      DbConstants.tPayments,
+      where: '${DbConstants.cPayLoanId} = ?',
+      whereArgs: [loanId],
+    );
+    _payments.removeWhere((p) => p.loanId == loanId);
     notifyListeners();
   }
 }
